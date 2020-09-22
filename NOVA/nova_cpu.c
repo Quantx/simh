@@ -427,12 +427,14 @@ int32 MapStatNext = 0;                                  /* Bits to be set uppon 
 #define DCHMAP_ENABLE (MapStat & (1 << 14))             /* Is data channel mapping enabled */
 #define USERMAP_ENABLE ( !(MapStat & (1 << 13)) \
                        && (MapStat & (1 << 15)) )       /* Is user mapping enabled */
+#define CYCLE_MAP (MapStat & (1 << 5))                  /* Which usermap is single cycle using */
 
 #define WRITE_PROTECT (MapStat & (1 << 1))              /* Is write protection enabled */
 #define IOT_PROTECT (MapStat & (1 << 2))                /* Is I/O transfer protection enabled */
 #define INDER_PROTECT (MapStat & (1 << 3))              /* Is indirection protection enabled */
 #define AUTOINC_PROTECT (MapStat & (1 << 4))            /* Is auto-increment protection enabled */
 #define VALIDITY_PROTECT (MapStat & (1 << 5))           /* Is validity protection enabled */
+#define CYCLE_PROTECT (MapStat & (1 << 6))              /* Is single cycle write protection enabled */
 
 int32 FetchAddress = 0;                                 /* Current instruction address */
 int32 Fault = 0;                                        /* Fault has occured, trap MAP */
@@ -801,7 +803,7 @@ while (reason == 0) {                                   /* loop until halted */
         if ( USERMAP_ENABLE && IOT_PROTECT
         && device != 1 && device <= 074 && device >= 076 ) /* I/O violation */
         {
-            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 2) | (MapStat & 1);
+            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (SingleCycle << 6) | (1 << 2) | (MapStat & 1);
             ViolationAddress = FetchAddress;
             ViolationDCH = 0;
             Fault = 1;
@@ -1075,7 +1077,7 @@ while (reason == 0) {                                   /* loop until halted */
                     ViolationDCH = 0;
                     break;
                 case iopS:                              /* enable MAP single cycle */
-                    SingleCycle = 1;
+                    SingleCycle = 2;
                     break;
             }                                           /* end case code */
         }                                               /* end if MAP map */
@@ -1183,6 +1185,8 @@ while (reason == 0) {                                   /* loop until halted */
         }    /*  end of handling non-existant device  */
         else reason = stop_dev;
     }                                                   /* end if IOT */
+
+    if ( SingleCycle > 0 ) SingleCycle--;               /* decrement single cycle */
 }                                                       /* end while */
 
 /* Simulation halted */
@@ -1402,22 +1406,33 @@ t_stat map_dep (t_value val, t_addr addr, UNIT *uptr, int32 sw)
 /* MAP address translation */
 int32 GetMap(int32 addr)
 {
+    if ( Fault ) return 0;
+
     addr &= AMASK;
 
     // Apply user mapping
     if ( USERMAP_ENABLE )
     {
-        int32 mpage = Map[MapStat & 1][addr >> 10 & 037];
+        int32 mpage;
+
+        if ( SingleCycle ) {
+            mpage = Map[CYCLE_MAP][addr >> 10 & 037];
+        }
+        else {
+            mpage = Map[MapStat & 1][addr >> 10 & 037];
+        }
 
         if ( (mpage & PAGEFAULT) == PAGEFAULT ) // Page validity violation
         {
-            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 5) | (MapStat & 1);
+            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (SingleCycle << 6) | (1 << 5) | (MapStat & 1);
             ViolationAddress = FetchAddress;
             ViolationDCH = 0;
             Fault = 1;
 
             return 0;
         }
+
+        SingleCycle = 0; // Disable Single Cycle
 
         addr = ((mpage << 10) | (addr & 01777)) & 0777777;
     }
@@ -1434,11 +1449,18 @@ int32 PutMap(int32 addr, int32 data)
     // Apply user mapping
     if ( USERMAP_ENABLE )
     {
-        int32 mpage = Map[MapStat & 1][addr >> 10 & 037];
+        int32 mpage;
+
+        if ( SingleCycle ) {
+            mpage = Map[CYCLE_MAP][addr >> 10 & 037];
+        }
+        else {
+            mpage = Map[MapStat & 1][addr >> 10 & 037];
+        }
 
         if ( (mpage & PAGEFAULT) == PAGEFAULT ) // Page validity violation
         {
-            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 5) | (MapStat & 1);
+            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (SingleCycle << 6) | (1 << 5) | (MapStat & 1);
             ViolationAddress = FetchAddress;
             ViolationDCH = 0;
             Fault = 1;
@@ -1446,15 +1468,18 @@ int32 PutMap(int32 addr, int32 data)
             return data;
         }
 
-        if ( WRITE_PROTECT && (mpage & (1 << 8)) ) // Write protect violation
+        if ( ( !SingleCycle && WRITE_PROTECT && (mpage & (1 << 8)) )
+          || (  SingleCycle && CYCLE_PROTECT && (mpage & (1 << 8)) ) ) // Write protect violation
         {
-            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 1) | (MapStat & 1);
+            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (SingleCycle << 6) | (1 << 1) | (MapStat & 1);
             ViolationAddress = FetchAddress;
             ViolationDCH = 0;
             Fault = 1;
 
             return data;
         }
+
+        SingleCycle = 0; // Disable single cycle
 
         addr = (((mpage & PAGEMASK) << 10) | (addr & 01777)) & 0777777;
     }
@@ -1467,6 +1492,8 @@ int32 PutMap(int32 addr, int32 data)
 /* MAP address translation */
 int16 GetDCHMap(int32 map, int32 addr)
 {
+    if ( Fault ) return 0;
+
     addr &= AMASK;
 
     if ( map < 0 || map > 1 ) map = 0; // Use DCH A by default
@@ -1490,7 +1517,6 @@ int16 GetDCHMap(int32 map, int32 addr)
     }
 
     return M[addr];
-
 }
 
 int16 PutDCHMap(int32 map, int32 addr, int16 data)
