@@ -249,16 +249,13 @@ if ((uptr->flags & UNIT_BUF) == 0) {                    /* not buf? abort */
 da = dsk_da * DSK_NUMWD;                                /* calc disk addr */
 if (uptr->FUNC == iopS) {                               /* read? */
     for (i = 0; i < DSK_NUMWD; i++) {                   /* copy sector */
-        pa = MapAddr (0, (dsk_ma + i) & AMASK);         /* map address */
-        if (MEM_ADDR_OK (pa))
-            M[pa] = fbuf[da + i];
+          PutDCHMap(0, (dsk_ma + i) & AMASK, fbuf[da + i]);
         }
     dsk_ma = (dsk_ma + DSK_NUMWD) & AMASK;
     }
 else if (uptr->FUNC == iopP) {                          /* write? */
     for (i = 0; i < DSK_NUMWD; i++) {                   /* copy sector */
-        pa = MapAddr (0, (dsk_ma + i) & AMASK);         /* map address */
-        fbuf[da + i] = M[pa];
+        fbuf[da + i] = GetDCHMap(0, (dsk_ma + i) & AMASK);
         }
     if (((uint32) (da + i)) >= uptr->hwmark)            /* past end? */
         uptr->hwmark = da + i + 1;                      /* upd hwmark */

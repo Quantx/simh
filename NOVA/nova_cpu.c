@@ -424,7 +424,7 @@ int32 MapStatNext = 0;                                  /* Bits to be set uppon 
 #define PAGEMASK 0377                                   /* Largest page possible */
 #define PAGEFAULT 0777                                  /* Invalid page mask */
 
-#define DCMMAP_ENABLE (MapStat & (1 << 14))             /* Is data channel mapping enabled */
+#define DCHMAP_ENABLE (MapStat & (1 << 14))             /* Is data channel mapping enabled */
 #define USERMAP_ENABLE ( !(MapStat & (1 << 13)) \
                        && (MapStat & (1 << 15)) )       /* Is user mapping enabled */
 
@@ -540,18 +540,18 @@ while (reason == 0) {                                   /* loop until halted */
         if (int_req & INT_TRAP) {                       /* trap instruction? */
             int_req = int_req & ~INT_TRAP;              /* clear */
             PCQ_ENTRY;                                  /* save old PC */
-            PutMap( TRP_SAV, (PC - 1) & AMASK );
+            PutMap(TRP_SAV, (PC - 1) & AMASK);
             MA = TRP_JMP;                               /* jmp @47 */
         }
         else {
             int_req = int_req & ~INT_ION;               /* intr off */
             PCQ_ENTRY;                                  /* save old PC */
-            PutMap( INT_SAV, PC );
+            PutMap(INT_SAV, PC);
             if (int_req & INT_STK) {                    /* stack overflow? */
                 int_req = int_req & ~INT_STK;           /* clear */
                 MA = STK_JMP;                           /* jmp @3 */
             }
-            else MA = GetMap( INT_JMP );                /* intr: jmp @1 */
+            else MA = GetMap(INT_JMP);                  /* intr: jmp @1 */
         }
         if ( MODE_64K_ACTIVE ) {
             indf = IND_STEP (MA);
@@ -1405,7 +1405,22 @@ int32 GetMap(int32 addr)
     addr &= AMASK;
 
     // Apply user mapping
-    if ( USERMAP_ENABLE ) addr = ( (Map[MapStat & 1][addr >> 10 & 037] << 10) | (addr & 01777) ) & 0777777;
+    if ( USERMAP_ENABLE )
+    {
+        int32 mpage = Map[MapStat & 1][addr >> 10 & 037];
+
+        if ( (mpage & PAGEFAULT) == PAGEFAULT ) // Page validity violation
+        {
+            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 5) | (MapStat & 1);
+            ViolationAddress = FetchAddress;
+            ViolationDCH = 0;
+            Fault = 1;
+
+            return 0;
+        }
+
+        addr = ((mpage << 10) | (addr & 01777)) & 0777777;
+    }
 
     return M[addr];
 }
@@ -1416,11 +1431,11 @@ int32 PutMap(int32 addr, int32 data)
 
     addr &= AMASK;
 
-    int32 mpage = Map[MapStat & 1][addr >> 10 & 037];
-
     // Apply user mapping
     if ( USERMAP_ENABLE )
     {
+        int32 mpage = Map[MapStat & 1][addr >> 10 & 037];
+
         if ( (mpage & PAGEFAULT) == PAGEFAULT ) // Page validity violation
         {
             ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 5) | (MapStat & 1);
@@ -1449,6 +1464,75 @@ int32 PutMap(int32 addr, int32 data)
     return data;
 }
 
+/* MAP address translation */
+int16 GetDCHMap(int32 map, int32 addr)
+{
+    addr &= AMASK;
+
+    if ( map < 0 || map > 1 ) map = 0; // Use DCH A by default
+
+    // Apply Data Channel mapping
+    if ( DCHMAP_ENABLE )
+    {
+        int32 mpage = Map[map + 2][addr >> 10 & 037];
+
+        if ( (mpage & PAGEFAULT) == PAGEFAULT ) // Page validity violation
+        {
+            ViolationWord = 0100000 | ((addr >> 10) & 5) | (1 << 5) | map;
+            ViolationAddress = addr;
+            ViolationDCH = 1;
+            Fault = 1;
+
+            return 0;
+        }
+
+        addr = ((mpage << 10) | (addr & 01777)) & 0777777;
+    }
+
+    return M[addr];
+
+}
+
+int16 PutDCHMap(int32 map, int32 addr, int16 data)
+{
+    if ( Fault ) return data; // Encountered a fault, do not update memory
+
+    if ( map < 0 || map > 1 ) map = 0; // Use DCH A by default
+
+    addr &= AMASK;
+
+    // Apply Data Channel mapping
+    if ( DCHMAP_ENABLE )
+    {
+        int32 mpage = Map[map + 2][addr >> 10 & 037];
+
+        if ( (mpage & PAGEFAULT) == PAGEFAULT ) // Page validity violation
+        {
+            ViolationWord = 0100000 | ((addr >> 10) & 5) | (1 << 5) | map;
+            ViolationAddress = addr;
+            ViolationDCH = 1;
+            Fault = 1;
+
+            return data;
+        }
+
+        if ( WRITE_PROTECT && (mpage & (1 << 8)) ) // Write protect violation
+        {
+            ViolationWord = 0100000 | ((addr >> 10) & 5) | (1 << 1) | map;
+            ViolationAddress = addr;
+            ViolationDCH = 1;
+            Fault = 1;
+
+            return data;
+        }
+
+        addr = (((mpage & PAGEMASK) << 10) | (addr & 01777)) & 0777777;
+    }
+
+    if ( MEM_ADDR_OK(addr) ) M[addr] = data;
+
+    return data;
+}
 
 /*
    Given a map number and a logical, returns the physical address, unless
@@ -1457,11 +1541,10 @@ int32 PutMap(int32 addr, int32 data)
 
    DCH A when: map = 0
    DCH B when: map = 1
-*/
 
 int32 MapAddr (int32 map, int32 addr)
 {
-    if ( map >= 0 && map <= 1 && DCMMAP_ENABLE ) /* map is valid and DCH mapping is enabled */
+    if ( map >= 0 && map <= 1 && DCMMAP_ENABLE ) /* map is valid and DCH mapping is enabled
     {
         int32 mpage = Map[map + 2][(addr >> 10) & 037];
 
@@ -1474,7 +1557,7 @@ int32 MapAddr (int32 map, int32 addr)
 
             return 0; // TODO: Fix bad return value
         }
-/*
+
         if ( WRITE_PROTECT && (mpage & (1 << 8)) ) // Write protect violation
         {
             ViolationWord = 0100000 | ((addr >> 10) & 5) | (1 << 1) | map;
@@ -1484,12 +1567,13 @@ int32 MapAddr (int32 map, int32 addr)
 
             return -1;
         }
-*/
+
         addr = ((mpage & PAGEMASK) << 10) | (addr & 001777);
     }
 
     return addr;
 }
+*/
 
 /* History subsystem
 

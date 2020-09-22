@@ -150,7 +150,6 @@
 #define STA_MON         (STA_REW | STA_BOT | STA_WLK | STA_RDY | \
                          STA_PEM)                       /* set status chg */
 
-extern uint16 M[];
 extern UNIT cpu_unit;
 extern int32 int_req, dev_busy, dev_done, dev_disable;
 extern int32 SR, AMASK;
@@ -395,9 +394,7 @@ else switch (c) {                                       /* case on command */
         for (i = p = 0; i < wc; i++) {                  /* copy buf to mem */
             c1 = mtxb[p++];
             c2 = mtxb[p++];
-            pa = MapAddr (0, mta_ma);                   /* map address */
-            if (MEM_ADDR_OK (pa))
-                M[pa] = (c1 << 8) | c2;
+            PutDCHMap(0, mta_ma, (c1 << 8) | c2);
             mta_ma = (mta_ma + 1) & AMASK;
             }
         mta_wc = (mta_wc + wc) & DMASK;
@@ -407,9 +404,8 @@ else switch (c) {                                       /* case on command */
     case CU_WRITE:                                      /* write */
         tbc = wc * 2;                                   /* io byte count */
         for (i = p = 0; i < wc; i++) {                  /* copy to buffer */
-            pa = MapAddr (0, mta_ma);                   /* map address */
-            mtxb[p++] = (M[pa] >> 8) & 0377;
-            mtxb[p++] = M[pa] & 0377;
+            mtxb[p++] = (GetDCHMap(0, mta_ma) >> 8) & 0377;
+            mtxb[p++] = GetDCHMap(0, mta_ma) & 0377;
             mta_ma = (mta_ma + 1) & AMASK;
             }
         if ((st = sim_tape_wrrecf (uptr, mtxb, tbc))) { /* write rec, err? */
