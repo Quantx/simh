@@ -916,16 +916,13 @@ do  {
             if ((err = ferror (uptr->fileref)))
                 break;
             for (dx = 0; dx < DKP_NUMWD; dx++) {            /* loop thru buffer */
-                pa = MapAddr (dkp_map, (dkp_ma & AMASK));
-                if (MEM_ADDR_OK (pa))
-                    M[pa] = tbuf[dx];
+                PutDCHMap(dkp_map, dkp_ma & AMASK, tbuf[dx]);
                 dkp_ma = (dkp_ma + 1) & AMASK;
                 }
         }
     else if (uptr->FUNC == FCCY_WRITE) {                /* write? */
             for (dx = 0; dx < DKP_NUMWD; dx++) {        /* loop into buffer */
-                pa = MapAddr (dkp_map, (dkp_ma & AMASK));
-                tbuf[dx] = M[pa];
+                tbuf[dx] = GetDCHMap(dkp_map, dkp_ma & AMASK);
                 dkp_ma = (dkp_ma + 1) & AMASK;
                 }
             fxwrite (tbuf, sizeof(int16), DKP_NUMWD, uptr->fileref);

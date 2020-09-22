@@ -5618,7 +5618,6 @@ int32 PutMap(int32 addr, int32 data)
     return (data);            
 }
 
-#if 0
 int16 GetDCHMap(int32 map, int32 addr)
 {
      t_addr paddr;
@@ -5641,13 +5640,11 @@ int16 PutDCHMap(int32 map, int32 addr, int16 data)
         M[paddr] = data;
      return (data);    
 }
-#endif
 
 /* Given a map number and a logical, returns the physical address, unless
    the map is not active, in which case logical = physical.  This is
    used primarily by the I/O routines to map data channel read/writes.
-*/
-   
+
 int32 MapAddr(int32 map, int32 addr)
 {
      int32 paddr;
@@ -5656,6 +5653,7 @@ int32 MapAddr(int32 map, int32 addr)
      paddr = ((Map[map][(addr >> 10) & 037] & PAGEMASK) << 10) | (addr & 001777);
      return paddr;    
 }
+*/
 
 /* Loads a word into the Eclipse Maps */
 

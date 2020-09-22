@@ -335,9 +335,11 @@ typedef struct {
 
 /* Function prototypes */
 
-int32 MapAddr (int32 map, int32 addr);
+//int32 MapAddr (int32 map, int32 addr);
 int32 GetMap (int32 addr);
 int32 PutMap (int32 addr, int32 data);
+int16 GetDCHMap(int32 map, int32 addr);
+int16 PutDCHMap(int32 map, int32 addr, int16 data);
 
 t_stat set_enb (UNIT *uptr, int32 val, char *cptr, void *desc);
 t_stat set_dsb (UNIT *uptr, int32 val, char *cptr, void *desc);
