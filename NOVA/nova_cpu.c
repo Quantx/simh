@@ -282,18 +282,18 @@ typedef struct
     {
     int32    pc;
     int16    ir;
-    int16    ac0 ;
-    int16    ac1 ;
-    int16    ac2 ;
-    int16    ac3 ;
-    int16    carry ;
-    int16    sp ;
-    int16    fp ;
-    int32    devDone ;
-    int32    devBusy ;
-    int32    devDisable ;
-    int32    devIntr ;
-    }   Hist_entry ;
+    int16    ac0;
+    int16    ac1;
+    int16    ac2;
+    int16    ac3;
+    int16    carry;
+    int16    sp;
+    int16    fp;
+    int32    devDone;
+    int32    devBusy;
+    int32    devDisable;
+    int32    devIntr;
+    }   Hist_entry;
 
 
 uint16 M[MAXMEMSIZE] = { 0 };                           /* memory */
@@ -315,11 +315,11 @@ uint16 pcq[PCQ_SIZE] = { 0 };                           /* PC queue */
 int32 pcq_p = 0;                                        /* PC queue ptr */
 REG *pcq_r = NULL;                                      /* PC queue reg ptr */
 struct ndev dev_table[64];                              /* dispatch table */
-int32 AMASK = 077777 ;                                  /* current memory address mask  */
+int32 AMASK = 077777;                                   /* current memory address mask  */
                                                         /* (default to 32KW)  */
-static  int32    hist_p   = 0 ;                         /* history pointer */
-static  int32    hist_cnt = 0 ;                         /* history count   */
-static  Hist_entry * hist = NULL ;                      /* instruction history */
+static  int32    hist_p   = 0;                          /* history pointer */
+static  int32    hist_cnt = 0;                          /* history count   */
+static  Hist_entry * hist = NULL;                       /* instruction history */
 
 
 t_stat cpu_ex (t_value *vptr, t_addr addr, UNIT *uptr, int32 sw);
@@ -329,10 +329,10 @@ t_stat cpu_set_size (UNIT *uptr, int32 val, CONST char *cptr, void *desc);
 t_stat cpu_boot (int32 unitno, DEVICE *dptr);
 t_stat build_devtab (void);
 
-t_stat hist_set( UNIT * uptr, int32 val, CONST char * cptr, void * desc ) ;
-t_stat hist_show( FILE * st, UNIT * uptr, int32 val, CONST void * desc ) ;
-static int hist_save( int32 pc, int32 our_ir ) ;
-char * devBitNames( int32 flags, char * ptr, char * sepStr ) ;
+t_stat hist_set( UNIT * uptr, int32 val, CONST char * cptr, void * desc );
+t_stat hist_show( FILE * st, UNIT * uptr, int32 val, CONST void * desc );
+static int hist_save( int32 pc, int32 our_ir );
+char * devBitNames( int32 flags, char * ptr, char * sepStr );
 
 void mask_out (int32 mask);
 
@@ -501,9 +501,16 @@ while (reason == 0) {                                   /* loop until halted */
     if (sim_interval <= 0) {                            /* check clock queue */
         if ( (reason = sim_process_event ()) )
             break;
-        }
+    }
 
-    if ( Fault )                                        /* MAP error */
+    if ( !MODE_MAP )                                    /* MAP disabled */
+    {
+        Fault = 0;                                      /* Disable all MAP functionality */
+        MapStat = 0;
+        MapStatNext = 0;
+        SingleCycle = 0;
+    }
+    else if ( Fault )                                   /* MAP error */
     {
         int32 MA, indf;
 
@@ -531,11 +538,11 @@ while (reason == 0) {                                   /* loop until halted */
         MapStat |= 1 << 13;                             /* Disable user mapping */
 
         if (int_req & INT_TRAP) {                       /* trap instruction? */
-            int_req = int_req & ~INT_TRAP ;             /* clear */
+            int_req = int_req & ~INT_TRAP;              /* clear */
             PCQ_ENTRY;                                  /* save old PC */
             PutMap( TRP_SAV, (PC - 1) & AMASK );
             MA = TRP_JMP;                               /* jmp @47 */
-            }
+        }
         else {
             int_req = int_req & ~INT_ION;               /* intr off */
             PCQ_ENTRY;                                  /* save old PC */
@@ -544,37 +551,36 @@ while (reason == 0) {                                   /* loop until halted */
                 int_req = int_req & ~INT_STK;           /* clear */
                 MA = STK_JMP;                           /* jmp @3 */
             }
-        else
-        MA = GetMap( INT_JMP );                         /* intr: jmp @1 */
+            else MA = GetMap( INT_JMP );                /* intr: jmp @1 */
         }
-    if ( MODE_64K_ACTIVE ) {
-        indf = IND_STEP (MA);
+        if ( MODE_64K_ACTIVE ) {
+            indf = IND_STEP (MA);
         }
-    else
-    {
-        for (i = 0, indf = 1; indf && (i < ind_max); i++) { /* MAP is disabled here */
-            indf = IND_STEP (MA);                       /* indirect loop */
+        else {
+            for (i = 0, indf = 1; indf && (i < ind_max); i++) { /* MAP is disabled here */
+                indf = IND_STEP (MA);                   /* indirect loop */
+            }
+
+            if (i >= ind_max) {
+                reason = STOP_IND_INT;
+                break;
+            }
         }
-        if (i >= ind_max) {
-            reason = STOP_IND_INT;
-            break;
-        }
-    }
-    PC = MA;
+        PC = MA;
     }                                                   /* end interrupt */
 
     if (sim_brk_summ && sim_brk_test (PC, SWMASK ('E'))) { /* breakpoint? */
         reason = STOP_IBKPT;                            /* stop simulation */
         break;
-        }
+    }
 
     IR = GetMap(FetchAddress = PC);                     /* fetch instr, record address */
     if ( hist_cnt )
-        {
-        hist_save( PC, IR ) ;                           /*  PC, int_req unchanged */
-        }
+    {
+        hist_save( PC, IR );                            /*  PC, int_req unchanged */
+    }
 
-    INCREMENT_PC ;
+    INCREMENT_PC;
     int_req = int_req | INT_NO_ION_PENDING;             /* clear ION delay */
     sim_interval = sim_interval - 1;
 
@@ -586,101 +592,92 @@ while (reason == 0) {                                   /* loop until halted */
         srcAC = I_GETSRC (IR);                          /* get reg decodes */
         dstAC = I_GETDST (IR);
         switch (I_GETCRY (IR)) {                        /* decode carry */
-        case 0:                                         /* load */
-            src = AC[srcAC] | C;
-            break;
-        case 1:                                         /* clear */
-            src = AC[srcAC];
-            break;
-        case 2:                                         /* set */
-            src = AC[srcAC] | CBIT;
-            break;
-        case 3:                                         /* complement */
-            src = AC[srcAC] | (C ^ CBIT);
-            break;
-            }                                           /* end switch carry */
+            case 0:                                     /* load */
+                src = AC[srcAC] | C;
+                break;
+            case 1:                                     /* clear */
+                src = AC[srcAC];
+                break;
+            case 2:                                     /* set */
+                src = AC[srcAC] | CBIT;
+                break;
+            case 3:                                     /* complement */
+                src = AC[srcAC] | (C ^ CBIT);
+                break;
+        }                                               /* end switch carry */
 
         switch (I_GETALU (IR)) {                        /* decode ALU */
-        case 0:                                         /* COM */
-            src = src ^ DMASK;
-            break;
-        case 1:                                         /* NEG */
-            src = ((src ^ DMASK) + 1) & CDMASK;
-            break;
-        case 2:                                         /* MOV */
-            break;
-        case 3:                                         /* INC */
-            src = (src + 1) & CDMASK;
-            break;
-        case 4:                                         /* ADC */
-            src = ((src ^ DMASK) + AC[dstAC]) & CDMASK;
-            break;
-        case 5:                                         /* SUB */
-            src = ((src ^ DMASK) + AC[dstAC] + 1) & CDMASK;
-            break;
-        case 6:                                         /* ADD */
-            src = (src + AC[dstAC]) & CDMASK;
-            break;
-        case 7:                                         /* AND */
-            src = src & (AC[dstAC] | CBIT);
-            break;
-            }                                           /* end switch oper */
+            case 0:                                     /* COM */
+                src = src ^ DMASK;
+                break;
+            case 1:                                     /* NEG */
+                src = ((src ^ DMASK) + 1) & CDMASK;
+                break;
+            /* Nothing to be done for MOV */
+            case 3:                                     /* INC */
+                src = (src + 1) & CDMASK;
+                break;
+            case 4:                                     /* ADC */
+                src = ((src ^ DMASK) + AC[dstAC]) & CDMASK;
+                break;
+            case 5:                                     /* SUB */
+                src = ((src ^ DMASK) + AC[dstAC] + 1) & CDMASK;
+                break;
+            case 6:                                     /* ADD */
+                src = (src + AC[dstAC]) & CDMASK;
+                break;
+            case 7:                                     /* AND */
+                src = src & (AC[dstAC] | CBIT);
+                break;
+        }                                               /* end switch oper */
 
         switch (I_GETSHF (IR)) {                        /* decode shift */
-        case 0:                                         /* nop */
-            break;
-        case 1:                                         /* L */
-            src = ((src << 1) | (src >> 16)) & CDMASK;
-            break;
-        case 2:                                         /* R */
-            src = ((src >> 1) | (src << 16)) & CDMASK;
-            break;
-        case 3:                                         /* S */
-            src = ((src & 0377) << 8) | ((src >> 8) & 0377) |
-                (src & CBIT);
-            break;
-            }                                           /* end switch shift */
+            case 1:                                     /* L */
+                src = ((src << 1) | (src >> 16)) & CDMASK;
+                break;
+            case 2:                                     /* R */
+                src = ((src >> 1) | (src << 16)) & CDMASK;
+                break;
+            case 3:                                     /* S */
+                src = ((src & 0377) << 8) | ((src >> 8) & 0377) |
+                    (src & CBIT);
+                break;
+        }                                               /* end switch shift */
 
         switch (I_GETSKP (IR)) {                        /* decode skip */
-        case 0:                                         /* nop */
-            if ((IR & I_NLD) && (cpu_unit.flags & UNIT_STK)) {
-                int_req = int_req | INT_TRAP ;           /* Nova 3 or 4 trap */
-                continue ;
+            case 0:                                     /* nop */
+                if ((IR & I_NLD) && (cpu_unit.flags & UNIT_STK)) {
+                    int_req = int_req | INT_TRAP;      /* Nova 3 or 4 trap */
+                    continue;
                 }
-            break;
-        case 1:                                         /* SKP */
-            INCREMENT_PC ;
-            break;
-        case 2:                                         /* SZC */
-            if (src < CBIT)
-                INCREMENT_PC ;
-            break;
-        case 3:                                         /* SNC */
-            if (src >= CBIT)
-                INCREMENT_PC ;
-            break;
-        case 4:                                         /* SZR */
-            if ((src & DMASK) == 0)
-                INCREMENT_PC ;
-            break;
-        case 5:                                         /* SNR */
-            if ((src & DMASK) != 0)
-                INCREMENT_PC ;
-            break;
-        case 6:                                         /* SEZ */
-            if (src <= CBIT)
-                INCREMENT_PC ;
-            break;
-        case 7:                                         /* SBN */
-            if (src > CBIT)
-                INCREMENT_PC ;
-            break;
-            }                                           /* end switch skip */
+                break;
+            case 1:                                     /* SKP */
+                INCREMENT_PC;
+                break;
+            case 2:                                     /* SZC */
+                if (src < CBIT) INCREMENT_PC;
+                break;
+            case 3:                                     /* SNC */
+                if (src >= CBIT) INCREMENT_PC;
+                break;
+            case 4:                                     /* SZR */
+                if ((src & DMASK) == 0) INCREMENT_PC;
+                break;
+            case 5:                                     /* SNR */
+                if ((src & DMASK) != 0) INCREMENT_PC;
+                break;
+            case 6:                                     /* SEZ */
+                if (src <= CBIT) INCREMENT_PC;
+                break;
+            case 7:                                     /* SBN */
+                if (src > CBIT) INCREMENT_PC;
+                break;
+        }                                               /* end switch skip */
         if ((IR & I_NLD) == 0) {                        /* load? */
             AC[dstAC] = src & DMASK;
             C = src & CBIT;
-            }                                           /* end if load */
-        }                                               /* end if operate */
+        }                                               /* end if load */
+    }                                                   /* end if operate */
 
 /* Memory reference instructions */
 
@@ -689,32 +686,31 @@ while (reason == 0) {                                   /* loop until halted */
 
         MA = I_GETDISP (IR);                            /* get disp */
         switch (I_GETMODE (IR)) {                       /* decode mode */
-        case 0:                                         /* page zero */
-            break;
-        case 1:                                         /* PC relative */
-            if (MA & DISPSIGN)
-                MA = 0177400 | MA;
-            MA = (MA + PC - 1) & AMASK;
-            break;
-        case 2:                                         /* AC2 relative */
-            if (MA & DISPSIGN)
-                MA = 0177400 | MA;
-            MA = (MA + AC[2]) & AMASK;
-            break;
-        case 3:                                         /* AC3 relative */
-            if (MA & DISPSIGN)
-                MA = 0177400 | MA;
-            MA = (MA + AC[3]) & AMASK;
-            break;
-            }                                           /* end switch mode */
+            /* Nothing to be done for Zero Page */
+            case 1:                                     /* PC relative */
+                if (MA & DISPSIGN)
+                    MA = 0177400 | MA;
+                MA = (MA + PC - 1) & AMASK;
+                break;
+            case 2:                                     /* AC2 relative */
+                if (MA & DISPSIGN)
+                    MA = 0177400 | MA;
+                MA = (MA + AC[2]) & AMASK;
+                break;
+            case 3:                                     /* AC3 relative */
+                if (MA & DISPSIGN)
+                    MA = 0177400 | MA;
+                MA = (MA + AC[3]) & AMASK;
+                break;
+        }                                           /* end switch mode */
 
         if ( (indf = IR & I_IND) ) {                    /* indirect? */
             if ( MODE_64K_ACTIVE ) {                    /* 64k mode? */
                 indf = IND_STEP (MA);
-                }
+            }
             else                                        /* compat mode */
-                {
-                 for (i = 0; indf && (i < ind_max); i++) {   /* count */
+            {
+                for (i = 0; indf && (i < ind_max); i++) {   /* count */
                     if (i >= 15 && USERMAP_ENABLE && INDER_PROTECT) break;
                     if ( MA >= 020 && MA <= 037 && USERMAP_ENABLE && AUTOINC_PROTECT ) break;
                     indf = IND_STEP (MA);               /* resolve indirect */
@@ -748,56 +744,48 @@ while (reason == 0) {                                   /* loop until halted */
         }
 
         switch (I_GETOPAC (IR)) {                       /* decode op + AC */
-        case 001:                                       /* JSR */
-            AC[3] = PC;
-        case 000:                                       /* JMP */
-            PCQ_ENTRY;
-            PC = MA;
-            break;
-        case 002:                                       /* ISZ */
-            src = (GetMap(MA) + 1) & DMASK;
-            if (MEM_ADDR_OK(GetMap(MA)))
+            case 001:                                   /* JSR */
+                AC[3] = PC;
+            case 000:                                   /* JMP */
+                PCQ_ENTRY;
+                PC = MA;
+                break;
+            case 002:                                   /* ISZ */
+                src = (GetMap(MA) + 1) & DMASK;
                 PutMap(MA, src);
-            if (src == 0)
-                INCREMENT_PC ;
-            break;
-        case 003:                                       /* DSZ */
-            src = (GetMap(MA) - 1) & DMASK;
-            if (MEM_ADDR_OK(GetMap(MA)))
+                if (src == 0) INCREMENT_PC;
+                break;
+            case 003:                                   /* DSZ */
+                src = (GetMap(MA) - 1) & DMASK;
                 PutMap(MA, src);
-            if (src == 0)
-                INCREMENT_PC ;
-            break;
-        case 004:                                       /* LDA 0 */
-            AC[0] = GetMap(MA);
-            break;
-        case 005:                                       /* LDA 1 */
-            AC[1] = GetMap(MA);
-            break;
-        case 006:                                       /* LDA 2 */
-            AC[2] = GetMap(MA);
-            break;
-        case 007:                                       /* LDA 3 */
-            AC[3] = GetMap(MA);
-            break;
-        case 010:                                       /* STA 0 */
-            if (MEM_ADDR_OK(GetMap(MA)))
+                if (src == 0) INCREMENT_PC;
+                break;
+            case 004:                                   /* LDA 0 */
+                AC[0] = GetMap(MA);
+                break;
+            case 005:                                   /* LDA 1 */
+                AC[1] = GetMap(MA);
+                break;
+            case 006:                                   /* LDA 2 */
+                AC[2] = GetMap(MA);
+                break;
+            case 007:                                   /* LDA 3 */
+                AC[3] = GetMap(MA);
+                break;
+            case 010:                                   /* STA 0 */
                 PutMap(MA, AC[0]);
-            break;
-        case 011:                                       /* STA 1 */
-            if (MEM_ADDR_OK(GetMap(MA)))
+                break;
+            case 011:                                   /* STA 1 */
                 PutMap(MA, AC[1]);
-            break;
-        case 012:                                       /* STA 2 */
-            if (MEM_ADDR_OK(GetMap(MA)))
+                break;
+            case 012:                                   /* STA 2 */
                 PutMap(MA, AC[2]);
-            break;
-        case 013:                                       /* STA 3 */
-            if (MEM_ADDR_OK(GetMap(MA)))
+                break;
+            case 013:                                   /* STA 3 */
                 PutMap(MA, AC[3]);
-            break;
-            }                                           /* end switch */
-        }                                               /* end mem ref */
+                break;
+        }                                           /* end switch */
+    }                                               /* end mem ref */
 
 /* IOT instruction */
 
@@ -822,10 +810,9 @@ while (reason == 0) {                                   /* loop until halted */
 
         if (code == ioSKP) {                            /* IO skip? */
             switch (pulse) {                            /* decode IR<8:9> */
-
-            case 0: match = 1;                          /* skip if busy */
-            case 1: switch (device) {                   /* skip if not busy */
-                    case DEV_CPU:                       /* check if interrupts are enabled */
+                case 0: match = 1;                      /* skip if busy */
+                case 1: switch (device) {               /* skip if not busy */
+                        case DEV_CPU:                   /* check if interrupts are enabled */
                         if ( (int_req & INT_ION) == match ) INCREMENT_PC;
                         break;
                     case DEV_MAP:                       /* check if a data channel error has occured */
@@ -835,16 +822,16 @@ while (reason == 0) {                                   /* loop until halted */
                         if ( (dev_busy & dev_table[device].mask) == match ) INCREMENT_PC;
                 }
                 break;
-            case 2: match = 1;                          /* skip if done */
-            case 3: switch (device) {                   /* skip if not done */
-                    case DEV_CPU:                       /* check for power failure */
-                        if ( pwr_low == match ) INCREMENT_PC;
-                        break;
-                    case DEV_MAP:                       /* check if address translation is enabled */
-                        if ( MODE_MAP && USERMAP_ENABLE == match ) INCREMENT_PC;
-                        break;
-                    default:
-                        if ( (dev_busy & dev_table[device].mask) == match ) INCREMENT_PC;
+                case 2: match = 1;                      /* skip if done */
+                case 3: switch (device) {               /* skip if not done */
+                        case DEV_CPU:                   /* check for power failure */
+                            if ( pwr_low == match ) INCREMENT_PC;
+                            break;
+                        case DEV_MAP:                   /* check if address translation is enabled */
+                            if ( MODE_MAP && USERMAP_ENABLE == match ) INCREMENT_PC;
+                            break;
+                        default:
+                            if ( (dev_busy & dev_table[device].mask) == match ) INCREMENT_PC;
                 }
             }                                           /* end switch */
         }                                               /* end IO skip */
@@ -853,251 +840,217 @@ while (reason == 0) {                                   /* loop until halted */
 
         else if (device == DEV_MDV) {
             switch (code) {                             /* case on opcode */
-
-            case ioNIO:                                 /* frame ptr */
-                if (cpu_unit.flags & UNIT_STK) {
-                    if (pulse == iopN)
-                        FP = AC[dstAC] & AMASK ;
-                    if (pulse == iopC)
-                        AC[dstAC] = FP & AMASK ;
+                case ioNIO:                             /* frame ptr */
+                    if (cpu_unit.flags & UNIT_STK) {
+                        if (pulse == iopN) FP = AC[dstAC] & AMASK;
+                        if (pulse == iopC) AC[dstAC] = FP & AMASK;
                     }
-                break;
-
-            case ioDIA:                                 /* load byte */
-                if (cpu_unit.flags & UNIT_BYT)
+                    break;
+                case ioDIA:                             /* load byte */
+                    if (cpu_unit.flags & UNIT_BYT)
                     {
-                    AC[dstAC] = (GetMap(AC[pulse] >> 1) >> ((AC[pulse] & 1)? 0: 8)) & 0377 ;
+                        AC[dstAC] = (GetMap(AC[pulse] >> 1) >> ((AC[pulse] & 1)? 0: 8)) & 0377;
                     }
-                else if (cpu_unit.flags & UNIT_STK)  /*  if Nova 3 this is really a SAV... 2007-Jun-01, BKR  */
+                    else if (cpu_unit.flags & UNIT_STK)  /*  if Nova 3 this is really a SAV... 2007-Jun-01, BKR  */
                     {
-                    SP = INCA (SP);
-                    if (MEM_ADDR_OK(GetMap(SP)))
+                        SP = INCA (SP);
                         PutMap(SP, AC[0]);
-                    SP = INCA (SP);
-                    if (MEM_ADDR_OK(GetMap(SP)))
+                        SP = INCA (SP);
                         PutMap(SP, AC[1]);
-                    SP = INCA (SP);
-                    if (MEM_ADDR_OK(GetMap(SP)))
+                        SP = INCA (SP);
                         PutMap(SP, AC[2]);
-                    SP = INCA (SP);
-                    if (MEM_ADDR_OK(GetMap(SP)))
+                        SP = INCA (SP);
                         PutMap(SP, FP);
-                    SP = INCA (SP);
-                    if (MEM_ADDR_OK(GetMap(SP)))
+                        SP = INCA (SP);
                         PutMap(SP, (C >> 1) | (AC[3] & AMASK) );
-                    AC[3] = FP = SP & AMASK;
-                    STK_CHECK (SP, 5);
-                    }
-                else
-                    {
-                    AC[dstAC] = 0;
-                    }
-                break;
-
-            case ioDOA:                                 /* stack ptr */
-                if (cpu_unit.flags & UNIT_STK) {
-                    if (pulse == iopN)
-                        SP = AC[dstAC] & AMASK;
-                    if (pulse == iopC)
-                        AC[dstAC] = SP & AMASK;
-                    }
-                break;
-
-            case ioDIB:                                 /* push, pop */
-                if (cpu_unit.flags & UNIT_STK) {
-                    if (pulse == iopN) {                /* push (PSHA) */
-                        SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
-                            PutMap(SP, AC[dstAC]);
-                        STK_CHECK (SP, 1);
-                        }
-                    if ((pulse == iopS) &&              /* Nova 4 pshn (PSHN) */
-                        (cpu_unit.flags & UNIT_BYT)) {
-                        SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
-                            PutMap(SP, AC[dstAC]);
-                        if ( (SP & 0xFFFF) > (GetMap(042) & 0xFFFF) )
-                            {
-                            int_req = int_req | INT_STK ;
-                            }
-                        }
-                    if (pulse == iopC) {                /* pop (POPA) */
-                        AC[dstAC] = GetMap(SP);
-                        SP = DECA (SP);
-                        }
-                    }
-                break;
-
-            case ioDOB:                                 /* store byte */
-                if (cpu_unit.flags & UNIT_BYT)
-                  {
-                    int32 MA, val;
-                   MA = AC[pulse] >> 1;
-                    val = AC[dstAC] & 0377;
-                    if (MEM_ADDR_OK (MA)) PutMap(MA, (AC[pulse] & 1)?
-                      ((GetMap(MA) & ~0377) | val)
-                    : ((GetMap(MA) &  0377) | (val << 8)) );
-                    }
-                else if (cpu_unit.flags & UNIT_STK)  /*  if Nova 3 this is really a SAV... 2007-Jun-01, BKR  */
-                    {
-                    SP = INCA (SP);
-                    if (MEM_ADDR_OK(GetMap(SP)))
-                        PutMap(SP, AC[0]);
-                    SP = INCA (SP);
-                    if (MEM_ADDR_OK(GetMap(SP)))
-                        PutMap(SP, AC[1]);
-                    SP = INCA (SP);
-                    if (MEM_ADDR_OK(GetMap(SP)))
-                        PutMap(SP, AC[2]);
-                    SP = INCA (SP);
-                    if (MEM_ADDR_OK(GetMap(SP)))
-                        PutMap(SP, FP);
-                    SP = INCA (SP);
-                    if (MEM_ADDR_OK(GetMap(SP)))
-                        PutMap(SP, (C >> 1) | (AC[3] & AMASK) );
-                    AC[3] = FP = SP & AMASK;
-                    STK_CHECK (SP, 5);
-                    }
-                break;
-
-            case ioDIC:                                 /* save, return */
-                if (cpu_unit.flags & UNIT_STK) {
-                    if (pulse == iopN) {                /* save */
-                        SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
-                            PutMap(SP, AC[0]);
-                        SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
-                            PutMap(SP, AC[1]);
-                        SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
-                            PutMap(SP, AC[2]);
-                        SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
-                            PutMap(SP, FP);
-                        SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
-                            PutMap(SP, (C >> 1) | (AC[3] & AMASK) );
                         AC[3] = FP = SP & AMASK;
                         STK_CHECK (SP, 5);
+                    }
+                    else
+                    {
+                        AC[dstAC] = 0;
+                    }
+                    break;
+                case ioDOA:                             /* stack ptr */
+                    if (cpu_unit.flags & UNIT_STK) {
+                        if (pulse == iopN) SP = AC[dstAC] & AMASK;
+                        if (pulse == iopC) AC[dstAC] = SP & AMASK;
+                    }
+                    break;
+                case ioDIB:                             /* push, pop */
+                    if (cpu_unit.flags & UNIT_STK) {
+                        if (pulse == iopN) {            /* push (PSHA) */
+                            SP = INCA (SP);
+                            PutMap(SP, AC[dstAC]);
+                            STK_CHECK (SP, 1);
                         }
-                    else if (pulse == iopC) {                /* retn */
-                        PCQ_ENTRY;
-                        SP = FP & AMASK;
-                        C = (GetMap(SP) << 1) & CBIT;
-                        PC = GetMap(SP) & AMASK;
-                        SP = DECA (SP);
-                        AC[3] = GetMap(SP);
-                        SP = DECA (SP);
-                        AC[2] = GetMap(SP);
-                        SP = DECA (SP);
-                        AC[1] = GetMap(SP);
-                        SP = DECA (SP);
-                        AC[0] = GetMap(SP);
-                        SP = DECA (SP);
-                        FP = AC[3] & AMASK;
-                        }
-                    else if ((pulse == iopS) &&              /* Nova 4 SAVN */
+                        if ((pulse == iopS) &&          /* Nova 4 pshn (PSHN) */
                         (cpu_unit.flags & UNIT_BYT)) {
-                        int32 frameSz = GetMap(PC);
-                        PC = INCA (PC) ;
+                            SP = INCA (SP);
+                            PutMap(SP, AC[dstAC]);
+                            if ( (SP & 0xFFFF) > (GetMap(042) & 0xFFFF) )
+                            {
+                                int_req = int_req | INT_STK;
+                            }
+                        }
+                        if (pulse == iopC) {            /* pop (POPA) */
+                            AC[dstAC] = GetMap(SP);
+                            SP = DECA (SP);
+                        }
+                    }
+                    break;
+                case ioDOB:                             /* store byte */
+                    if (cpu_unit.flags & UNIT_BYT)
+                    {
+                        int32 MA, val;
+                        MA = AC[pulse] >> 1;
+                        val = AC[dstAC] & 0377;
+                        PutMap(MA, (AC[pulse] & 1)?
+                            ((GetMap(MA) & ~0377) | val)
+                          : ((GetMap(MA) &  0377) | (val << 8)) );
+                    }
+                    else if (cpu_unit.flags & UNIT_STK) /*  if Nova 3 this is really a SAV... 2007-Jun-01, BKR  */
+                    {
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, AC[0]);
+                        SP = INCA (SP);
+                        PutMap(SP, AC[1]);
+                        SP = INCA (SP);
+                        PutMap(SP, AC[2]);
+                        SP = INCA (SP);
+                        PutMap(SP, FP);
+                        SP = INCA (SP);
+                        PutMap(SP, (C >> 1) | (AC[3] & AMASK) );
+                        AC[3] = FP = SP & AMASK;
+                        STK_CHECK (SP, 5);
+                    }
+                    break;
+                case ioDIC:                              /* save, return */
+                    if (~cpu_unit.flags & UNIT_STK) {
+                        if (pulse == iopN) {             /* save */
+                            SP = INCA (SP);
                             PutMap(SP, AC[0]);
-                        SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
+                            SP = INCA (SP);
                             PutMap(SP, AC[1]);
-                        SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
+                            SP = INCA (SP);
                             PutMap(SP, AC[2]);
-                        SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
+                            SP = INCA (SP);
                             PutMap(SP, FP);
-                        SP = INCA (SP);
-                        if (MEM_ADDR_OK(GetMap(SP)))
+                            SP = INCA (SP);
                             PutMap(SP, (C >> 1) | (AC[3] & AMASK) );
-                        AC[3] = FP = SP & AMASK ;
-                        SP = (SP + frameSz) & AMASK ;
-                        if (SP > GetMap(042))
+                            AC[3] = FP = SP & AMASK;
+                            STK_CHECK (SP, 5);
+                        }
+                        else if (pulse == iopC) {        /* retn */
+                            PCQ_ENTRY;
+                            SP = FP & AMASK;
+                            C = (GetMap(SP) << 1) & CBIT;
+                            PC = GetMap(SP) & AMASK;
+                            SP = DECA (SP);
+                            AC[3] = GetMap(SP);
+                            SP = DECA (SP);
+                            AC[2] = GetMap(SP);
+                            SP = DECA (SP);
+                            AC[1] = GetMap(SP);
+                            SP = DECA (SP);
+                            AC[0] = GetMap(SP);
+                            SP = DECA (SP);
+                            FP = AC[3] & AMASK;
+                        }
+                        else if ((pulse == iopS) &&              /* Nova 4 SAVN */
+                        (cpu_unit.flags & UNIT_BYT)) {
+                            int32 frameSz = GetMap(PC);
+                            PC = INCA (PC);
+                            SP = INCA (SP);
+                            PutMap(SP, AC[0]);
+                            SP = INCA (SP);
+                            PutMap(SP, AC[1]);
+                            SP = INCA (SP);
+                            PutMap(SP, AC[2]);
+                            SP = INCA (SP);
+                            PutMap(SP, FP);
+                            SP = INCA (SP);
+                            PutMap(SP, (C >> 1) | (AC[3] & AMASK) );
+                            AC[3] = FP = SP & AMASK;
+                            SP = (SP + frameSz) & AMASK;
+                            if (SP > GetMap(042))
                             {
-                            int_req = int_req | INT_STK;
+                                int_req = int_req | INT_STK;
                             }
                         }
                     }
-                break;
-
-            case ioDOC:
-                if ((dstAC == 2) && (cpu_unit.flags & UNIT_MDV))
+                    break;
+                case ioDOC:
+                    if ((dstAC == 2) && (cpu_unit.flags & UNIT_MDV))
                     {  /*  Nova, Nova3 or Nova 4  */
-                    uint32 mddata, uAC0, uAC1, uAC2;
+                        uint32 mddata, uAC0, uAC1, uAC2;
 
-                    uAC0 = (uint32) AC[0];
-                    uAC1 = (uint32) AC[1];
-                    uAC2 = (uint32) AC[2];
-                    if (pulse == iopP)
+                        uAC0 = (uint32) AC[0];
+                        uAC1 = (uint32) AC[1];
+                        uAC2 = (uint32) AC[2];
+                        if (pulse == iopP)
                         {                /* mul */
-                        mddata = (uAC1 * uAC2) + uAC0;
-                        AC[0]  = (mddata >> 16) & DMASK;
-                        AC[1]  = mddata & DMASK;
+                            mddata = (uAC1 * uAC2) + uAC0;
+                            AC[0]  = (mddata >> 16) & DMASK;
+                            AC[1]  = mddata & DMASK;
                         }
-                    if (pulse == iopS)
+                        if (pulse == iopS)
                         {                /* div */
-                        if ((uAC0 >= uAC2) || (uAC2 == 0))
+                            if ((uAC0 >= uAC2) || (uAC2 == 0))
                             {
-                            C = CBIT;
-                            }
-                        else
-                            {
-                            C = 0;
-                            mddata = (uAC0 << 16) | uAC1;
-                            AC[1]  = mddata / uAC2;
-                            AC[0]  = mddata % uAC2;
-                            }
-                        }
-                    }
-                else if ((dstAC == 3) && (cpu_unit.flags & UNIT_BYT) /* assuming UNIT_BYT = Nova 4 */)
-                    {
-                    int32 mddata;
-                    if (pulse == iopC)
-                        {                /* muls */
-                        mddata = (SEXT (AC[1]) * SEXT (AC[2])) + SEXT (AC[0]);
-                        AC[0]  = (mddata >> 16) & DMASK;
-                        AC[1]  = mddata & DMASK;
-                        }
-                    else if (pulse == iopN)
-                        {                /* divs */
-                        if ((AC[2] == 0) ||             /* overflow? */
-                            ((AC[0] == 0100000) && (AC[1] == 0) && (AC[2] == 0177777)))
-                            {
-                            C = CBIT;
-                            }
-                        else
-                            {
-                            mddata = (SEXT (AC[0]) << 16) | AC[1];
-                            AC[1]  = mddata / SEXT (AC[2]);
-                            AC[0]  = mddata % SEXT (AC[2]);
-                            if ((AC[1] > 077777) || (AC[1] < -0100000))
-                                {
                                 C = CBIT;
-                                }
+                            }
                             else
-                                {
+                            {
                                 C = 0;
-                                }
-                            AC[0] = AC[0] & DMASK;
+                                mddata = (uAC0 << 16) | uAC1;
+                                AC[1]  = mddata / uAC2;
+                                AC[0]  = mddata % uAC2;
                             }
                         }
                     }
-                else if ((dstAC == 3) && (cpu_unit.flags & UNIT_STK))  /*  if Nova 3 this is really a PSHA... 2007-Jun-01, BKR  */
+                    else if ((dstAC == 3) && (cpu_unit.flags & UNIT_BYT) /* assuming UNIT_BYT = Nova 4 */)
                     {
-                    SP = INCA (SP);
-                    if (MEM_ADDR_OK(GetMap(SP)))
-                        PutMap(SP, AC[dstAC]);
-                    STK_CHECK (SP, 1);
+                        int32 mddata;
+                        if (pulse == iopC)
+                        {                /* muls */
+                            mddata = (SEXT (AC[1]) * SEXT (AC[2])) + SEXT (AC[0]);
+                            AC[0]  = (mddata >> 16) & DMASK;
+                            AC[1]  = mddata & DMASK;
+                        }
+                        else if (pulse == iopN)
+                        {                /* divs */
+                            if ((AC[2] == 0) ||             /* overflow? */
+                               ((AC[0] == 0100000) && (AC[1] == 0) && (AC[2] == 0177777)))
+                            {
+                                C = CBIT;
+                            }
+                            else
+                            {
+                                mddata = (SEXT (AC[0]) << 16) | AC[1];
+                                AC[1]  = mddata / SEXT (AC[2]);
+                                AC[0]  = mddata % SEXT (AC[2]);
+                                if ((AC[1] > 077777) || (AC[1] < -0100000))
+                                {
+                                    C = CBIT;
+                                }
+                                else
+                                {
+                                    C = 0;
+                                }
+                                AC[0] = AC[0] & DMASK;
+                            }
+                        }
                     }
-                break;
-                }                                       /* end case code */
-            }                                           /* end if mul/div */
+                    else if ((dstAC == 3) && (cpu_unit.flags & UNIT_STK))  /*  if Nova 3 this is really a PSHA... 2007-Jun-01, BKR  */
+                    {
+                        SP = INCA (SP);
+                        PutMap(SP, AC[dstAC]);
+                        STK_CHECK (SP, 1);
+                    }
+                    break;
+            }                                       /* end case code */
+        }                                           /* end if mul/div */
 
         else if (device == DEV_MAP && MODE_MAP) {      /* Nova 3/4 MAP */
             switch (code) {
@@ -1148,67 +1101,59 @@ while (reason == 0) {                                   /* loop until halted */
         else if (device == DEV_CPU) {                   /* CPU control */
             switch (code) {                             /* decode IR<5:7> */
 
-        case ioNIO:                                     /* NIOP <x> CPU ? */
-            if ( pulse == iopP )
-                if ( MODE_64K )
+                case ioNIO:                             /* NIOP <x> CPU ? */
+                if ( pulse == iopP )
+                    if ( MODE_64K )
                     {
-                    /*  Keronix/Point4/SCI/INI/IDP (and others)    */
-                    /*  64 KW memory extension:                    */
-                    /*  NIOP - set memory mode (32/64 KW) per AC:  */
-                    /*  B15: 0 = 32 KW, 1 = 64 KW mode             */
-                    AMASK = (AC[dstAC] & 0x0001) ? 0177777 : 077777 ;
+                        /*  Keronix/Point4/SCI/INI/IDP (and others)    */
+                        /*  64 KW memory extension:                    */
+                        /*  NIOP - set memory mode (32/64 KW) per AC:  */
+                        /*  B15: 0 = 32 KW, 1 = 64 KW mode             */
+                        AMASK = (AC[dstAC] & 0x0001) ? 0177777 : 077777;
                     }
-                break ;
-
-            case ioDIA:                                 /* read switches */
-                AC[dstAC] = SR;
-                break;
-
-            case ioDIB:                                 /* int ack */
-                AC[dstAC] = 0;
-                DEV_UPDATE_INTR ;
-                iodata = int_req & (-int_req);
-                for (i = DEV_LOW; i <= DEV_HIGH; i++)  {
-                    if (iodata & dev_table[i].mask) {
-                        AC[dstAC] = i;
-                        break;
+                    break;
+                case ioDIA:                             /* read switches */
+                    AC[dstAC] = SR;
+                    break;
+                case ioDIB:                             /* int ack */
+                    AC[dstAC] = 0;
+                    DEV_UPDATE_INTR;
+                    iodata = int_req & (-int_req);
+                    for (i = DEV_LOW; i <= DEV_HIGH; i++) {
+                        if (iodata & dev_table[i].mask) {
+                            AC[dstAC] = i;
+                            break;
                         }
                     }
-                break;
-
-            case ioDOB:                                 /* mask out */
-                mask_out (pimask = AC[dstAC]);
-                break;
-
-            case ioDIC:                                 /* io reset */
-                reset_all (0);                          /* reset devices */
-                mask_out( 0 ) ;                         /* clear all device masks  */
-                AMASK = 077777 ;                        /* reset memory mode */
-                break;
-
-            case ioDOC:                                 /* halt */
-                reason = STOP_HALT;
-                break;
-                }                                       /* end switch code */
+                    break;
+                case ioDOB:                             /* mask out */
+                    mask_out (pimask = AC[dstAC]);
+                    break;
+                case ioDIC:                             /* io reset */
+                    reset_all (0);                      /* reset devices */
+                    mask_out( 0 );                      /* clear all device masks  */
+                    AMASK = 077777;                     /* reset memory mode */
+                    break;
+                case ioDOC:                             /* halt */
+                    reason = STOP_HALT;
+                    break;
+            }                                           /* end switch code */
 
             switch (pulse) {                            /* decode IR<8:9> */
-
-            case iopS:                                  /* ion */
-                int_req = (int_req | INT_ION) & ~INT_NO_ION_PENDING;
-                break;
-
-            case iopC:                                  /* iof */
-                int_req = int_req & ~INT_ION;
-                break;
-                }                                       /* end switch pulse */
-            }                                           /* end CPU control */
+                case iopS:                              /* ion */
+                    int_req = (int_req | INT_ION) & ~INT_NO_ION_PENDING;
+                    break;
+                case iopC:                              /* iof */
+                    int_req = int_req & ~INT_ION;
+                    break;
+            }                                           /* end switch pulse */
+        }                                               /* end CPU control */
 
         else if (dev_table[device].routine) {           /* normal device */
             iodata = dev_table[device].routine (pulse, code, AC[dstAC]);
             reason = iodata >> IOT_V_REASON;
-            if (code & 1)
-                AC[dstAC] = iodata & 0177777;
-            }
+            if (code & 1) AC[dstAC] = iodata & 0177777;
+        }
 
 /* bkr, 2007-May-30
  *    if device does not exist certain I/O instructions will still
@@ -1218,33 +1163,33 @@ while (reason == 0) {                                   /* loop until halted */
  *    Perform these non-supported device functions only if 'stop_dev'
  *    is zero (i.e. I/O access trap is not in effect).
  */
-    else if ( stop_dev == 0 )
+        else if ( stop_dev == 0 )
         {
-        switch (code)                                   /* decode IR<5:7> */
+            switch (code)                               /* decode IR<5:7> */
             {
-        case ioDIA:
-        case ioDIB:
-        case ioDIC:
-            AC[dstAC] = 0 ;  /*  idle I/O bus data  */
-            break;
+                case ioDIA:
+                case ioDIB:
+                case ioDIC:
+                    AC[dstAC] = 0;                      /*  idle I/O bus data  */
+                    break;
 
-        case ioSKP:
-            /*  (This should have been caught in previous CPU skip code)  */
-            if ( (pulse == 1 /* SKPBZ */) || (pulse == 3 /* SKPDZ */) )
-                {
-                INCREMENT_PC ;
-                }
+                case ioSKP:
+                    /*  (This should have been caught in previous CPU skip code)  */
+                    if ( (pulse == 1 /* SKPBZ */) || (pulse == 3 /* SKPDZ */) )
+                    {
+                        INCREMENT_PC;
+                    }
             }    /*  end of 'switch'  */
         }    /*  end of handling non-existant device  */
-      else reason = stop_dev;
-      }                                                 /* end if IOT */
-    }                                                   /* end while */
+        else reason = stop_dev;
+    }                                                   /* end if IOT */
+}                                                       /* end while */
 
 /* Simulation halted */
 
 saved_PC = PC;
 pcq_r->qptr = pcq_p;                                    /* update pc q ptr */
-return ( reason ) ;
+return ( reason );
 }
 
 /* New priority mask out */
@@ -1258,7 +1203,7 @@ for (i = DEV_LOW; i <= DEV_HIGH; i++)  {
     if (newmask & dev_table[i].pi)
         dev_disable = dev_disable | dev_table[i].mask;
     }
-DEV_UPDATE_INTR ;
+DEV_UPDATE_INTR;
 return;
 }
 
@@ -1270,7 +1215,7 @@ int_req = int_req & ~(INT_ION | INT_STK | INT_TRAP);
 pimask = 0;
 dev_disable = 0;
 pwr_low = 0;
-AMASK = 077777 ;                                        /* 32KW mode */
+AMASK = 077777;                                        /* 32KW mode */
 pcq_r = find_reg ("PCQ", NULL, dptr);
 if (pcq_r)
     pcq_r->qptr = 0;
@@ -1499,7 +1444,7 @@ int32 PutMap(int32 addr, int32 data)
         addr = (((mpage & PAGEMASK) << 10) | (addr & 01777)) & 0777777;
     }
 
-    M[addr] = data;
+    if ( MEM_ADDR_OK(addr) ) M[addr] = data;
 
     return data;
 }
@@ -1582,78 +1527,78 @@ typedef struct
 
 static int hist_save( int32 pc, int32 our_ir )
 {
-Hist_entry *    hist_ptr ;
+Hist_entry *    hist_ptr;
 
 if ( hist )
     if ( hist_cnt )
     {
-        hist_p = (hist_p + 1) ;        /* next entry  */
+        hist_p = (hist_p + 1);        /* next entry  */
         if ( hist_p >= hist_cnt )
         {
-        hist_p = 0 ;
+        hist_p = 0;
         }
-    hist_ptr = &hist[ hist_p ] ;
+    hist_ptr = &hist[ hist_p ];
 
     /*  (machine-specific stuff)  */
 
-    hist_ptr->pc    = pc ;
-    hist_ptr->ir    = our_ir ;
-    hist_ptr->ac0   = AC[ 0 ] ;
-    hist_ptr->ac1   = AC[ 1 ] ;
-    hist_ptr->ac2   = AC[ 2 ] ;
-    hist_ptr->ac3   = AC[ 3 ] ;
-    hist_ptr->carry = C ;
-    hist_ptr->fp    = FP ;
-    hist_ptr->sp    = SP ;
-    hist_ptr->devBusy    = dev_busy ;
-    hist_ptr->devDone    = dev_done ;
-    hist_ptr->devDisable = dev_disable ;
-    hist_ptr->devIntr    = int_req ;
+    hist_ptr->pc    = pc;
+    hist_ptr->ir    = our_ir;
+    hist_ptr->ac0   = AC[ 0 ];
+    hist_ptr->ac1   = AC[ 1 ];
+    hist_ptr->ac2   = AC[ 2 ];
+    hist_ptr->ac3   = AC[ 3 ];
+    hist_ptr->carry = C;
+    hist_ptr->fp    = FP;
+    hist_ptr->sp    = SP;
+    hist_ptr->devBusy    = dev_busy;
+    hist_ptr->devDone    = dev_done;
+    hist_ptr->devDisable = dev_disable;
+    hist_ptr->devIntr    = int_req;
     /*  how 'bout state and AMASK?  */
-    return ( hist_p ) ;
+    return ( hist_p );
     }
-return ( -1 ) ;
+return ( -1 );
 }    /*  end of 'hist_save'  */
 
 /*  setup history save area (proposed global routine)  */
 
 t_stat hist_set( UNIT * uptr, int32 val, CONST char * cptr, void * desc )
 {
-int32   i, lnt ;
-t_stat  r ;
+int32   i, lnt;
+t_stat  r;
 
 if ( cptr == NULL )
     {
-    for (i = 0 ; i < hist_cnt ; ++i )
+    for (i = 0; i < hist_cnt; ++i )
         {
-        hist[i].pc = 0 ;
-        hist[i].ir = HIST_IR_INVALID ;
+        hist[i].pc = 0;
+        hist[i].ir = HIST_IR_INVALID;
         }
-    hist_p = 0 ;
-    return ( SCPE_OK ) ;
+    hist_p = 0;
+    return ( SCPE_OK );
     }
-lnt = (int32) get_uint(cptr, 10, HIST_MAX, &r) ;
+lnt = (int32) get_uint(cptr, 10, HIST_MAX, &r);
 if ( (r != SCPE_OK) || (lnt && (lnt < HIST_MIN)) )
     {
-    return ( SCPE_ARG ) ;
+    return ( SCPE_ARG );
     }
 hist_p = 0;
 if ( hist_cnt )
     {
-    free( hist ) ;
-    hist_cnt = 0 ;
-    hist = NULL ;
+    free( hist );
+    hist_cnt = 0;
+    hist = NULL;
     }
 if ( lnt )
     {
-    hist = (Hist_entry *) calloc( lnt, sizeof(Hist_entry) ) ;
+    hist = (Hist_entry *) calloc( lnt, sizeof(Hist_entry) );
     if ( hist == NULL )
         {
-        return ( SCPE_MEM ) ;
+        return ( SCPE_MEM );
         }
-    hist_cnt = lnt ;
+    hist_cnt = lnt;
     }
-return ( SCPE_OK ) ;
+return ( SCPE_OK );
 }   /*  end of 'hist_set'  */
 
 
@@ -1663,7 +1608,7 @@ if ( hptr )
     {
     if ( itemNum == 0 )
         {
-        fprintf( fp, "\n\n" ) ;
+        fprintf( fp, "\n\n" );
         }
     fprintf( fp, "%05o / %06o   %06o  %06o  %06o  %06o  %o   ",
         (hptr->pc  & 0x7FFF),
@@ -1673,16 +1618,16 @@ if ( hptr )
         (hptr->ac2 & 0xFFFF),
         (hptr->ac3 & 0xFFFF),
         ((hptr->carry) ? 1 : 0)
-        ) ;
+        );
     if ( cpu_unit.flags & UNIT_STK  /* Nova 3 or Nova 4 */ )
         {
-        fprintf( fp, "%06o  %06o   ", SP, FP ) ;
+        fprintf( fp, "%06o  %06o   ", SP, FP );
         }
 
-    sim_eval[0] = (hptr->ir & 0xFFFF) ;
+    sim_eval[0] = (hptr->ir & 0xFFFF);
     if ( (fprint_sym(fp, (hptr->pc & AMASK), sim_eval, &cpu_unit, SWMASK ('M'))) > 0 )
         {
-        fprintf( fp, "(undefined) %04o", (hptr->ir & 0xFFFF) ) ;
+        fprintf( fp, "(undefined) %04o", (hptr->ir & 0xFFFF) );
     }
     /*
     display ION flag value, pend value?
@@ -1691,15 +1636,15 @@ if ( hptr )
 
     if ( 0 )                                            /*  display INTRP codes?  */
         {
-        char    tmp[ 500 ] ;
+        char    tmp[ 500 ];
 
-        devBitNames( hptr->devIntr, tmp, NULL ) ;
-        fprintf( fp, "    %s", tmp ) ;
+        devBitNames( hptr->devIntr, tmp, NULL );
+        fprintf( fp, "    %s", tmp );
         }
 
-    fprintf( fp, "\n" ) ;
+    fprintf( fp, "\n" );
     }
-return ( 0 ) ;
+return ( 0 );
 }   /*  end of 'hist_fprintf'  */
 
 
@@ -1707,40 +1652,40 @@ return ( 0 ) ;
 
 t_stat hist_show( FILE * st, UNIT * uptr, int32 val, CONST void * desc )
 {
-int32           k, di, lnt ;
-CONST char *    cptr = (CONST char *) desc ;
-t_stat          r ;
-Hist_entry *    hptr ;
+int32           k, di, lnt;
+CONST char *    cptr = (CONST char *) desc;
+t_stat          r;
+Hist_entry *    hptr;
 
 
 if (hist_cnt == 0)
     {
-    return ( SCPE_NOFNC ) ;                             /* enabled? */
+    return ( SCPE_NOFNC );                             /* enabled? */
     }
 if ( cptr )
     {                                                   /*  number of entries specified  */
-    lnt = (int32) get_uint( cptr, 10, hist_cnt, &r ) ;
+    lnt = (int32) get_uint( cptr, 10, hist_cnt, &r );
     if ( (r != SCPE_OK) || (lnt == 0) )
         {
-        return ( SCPE_ARG ) ;
+        return ( SCPE_ARG );
         }
         }
     else
         {
-        lnt = hist_cnt ;                                /*  display all entries  */
+        lnt = hist_cnt;                                /*  display all entries  */
         }
     di = hist_p - lnt;                                  /* work forward */
     if ( di < 0 )
         {
-        di = di + hist_cnt ;
+        di = di + hist_cnt;
         }
 
-for ( k = 0 ; k < lnt ; ++k )
+for ( k = 0; k < lnt; ++k )
     {                                                   /* print specified */
-    hptr = &hist[ (++di) % hist_cnt] ;                  /* entry pointer   */
+    hptr = &hist[ (++di) % hist_cnt];                  /* entry pointer   */
     if ( hptr->ir != HIST_IR_INVALID )                  /* valid entry?    */
         {
-        hist_fprintf( st, k, hptr ) ;
+        hist_fprintf( st, k, hptr );
         }                                               /* end else instruction */
     }                                                   /* end for */
 return SCPE_OK;
@@ -1750,9 +1695,9 @@ return SCPE_OK;
 
 struct Dbits
     {
-    int32      dBit ;
-    int32      dInvertMask ;
-    const char *dName ;
+    int32      dBit;
+    int32      dInvertMask;
+    const char *dName;
     }  devBits [] =
 
     {
@@ -1776,29 +1721,29 @@ struct Dbits
     { INT_TTO,    0,    "TTO"    },
     { INT_TTI,    0,    "TTI"    },
     {        0,   0,    NULL     }
-    } ;
+    };
 
 
 char * devBitNames( int32 flags, char * ptr, char * sepStr )
 {
-int    a ;
+int    a;
 
 if ( ptr )
     {
-    *ptr = 0 ;
-    for ( a = 0 ; (devBits[a].dBit) ; ++a )
+    *ptr = 0;
+    for ( a = 0; (devBits[a].dBit); ++a )
       if ( devBits[a].dBit & ((devBits[a].dInvertMask)? ~flags : flags) )
         {
         if ( *ptr )
             {
-            strcat( ptr, (sepStr) ? sepStr : " " ) ;
-            strcat( ptr, devBits[a].dName ) ;
+            strcat( ptr, (sepStr) ? sepStr : " " );
+            strcat( ptr, devBits[a].dName );
             }
         else
             {
-            strcpy( ptr, devBits[a].dName ) ;
+            strcpy( ptr, devBits[a].dName );
             }
         }
     }
-return ( ptr ) ;
+return ( ptr );
 }   /*  end of 'devBitNames'  */
