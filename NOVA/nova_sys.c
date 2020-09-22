@@ -66,6 +66,7 @@ extern DEVICE dsk_dev;
 extern DEVICE mta_dev;
 extern DEVICE qty_dev;
 extern DEVICE alm_dev;
+extern DEVICE map_dev;
 extern REG cpu_reg[];
 extern uint16 M[];
 extern int32 saved_PC;
@@ -73,7 +74,6 @@ extern int32 AMASK;
 
 #if defined (ECLIPSE)
 
-extern DEVICE map_dev;
 extern DEVICE fpu_dev;
 extern DEVICE pit_dev;
 extern int32 Usermap;
@@ -103,8 +103,8 @@ int32 sim_emax = 4;
 
 DEVICE *sim_devices[] = {
     &cpu_dev,
-#if defined (ECLIPSE)
     &map_dev,
+#if defined (ECLIPSE)
     &fpu_dev,
     &pit_dev,
 #endif
@@ -610,6 +610,8 @@ static const char *skip[] = {
 static const char *device[] = {
 #if defined (ECLIPSE)
  "ERCC", "MAP",
+#else
+ "MAP", "MAP1",
 #endif
  "TTI", "TTO", "PTR", "PTP", "RTC", "PLT", "CDR", "LPT",
  "DSK", "MTA", "DCM", "QTY" /* "ADCV" */, "DKP", "CAS",
@@ -618,9 +620,8 @@ static const char *device[] = {
  };
 
 static const int32 dev_val[] = {
-#if defined (ECLIPSE)
  002, 003,
-#endif
+
  010, 011, 012, 013, 014, 015, 016, 017,
  020, 022, 024, 030, 033, 034, 
  050, 051, 077,

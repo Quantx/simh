@@ -486,7 +486,7 @@ int mul_lf(LONG_FLOAT *fl, LONG_FLOAT *mul_fl);
 int div_sf(SHORT_FLOAT *fl, SHORT_FLOAT *div_fl);
 int div_lf(LONG_FLOAT *fl, LONG_FLOAT *div_fl);
 
-/* Special Debugging Info */ 
+/* Special Debugging Info */
 
 int32 Debug_Flags = 0;                                  /* Debug register - selects debug features */
 int32 Debug_Char = 0;                                   /* Debug Character Register */

@@ -80,9 +80,10 @@
                                 /*          Nova        */
                                 /*----------------------*/
 
-#define MAXMEMSIZE      65536                           /* max memory size in 16-bit words: 32KW = DG max, */
+#define MAXMEMSIZE      262144                          /* max memory size in 16-bit words: 32KW = DG max, */
                                                         /* 64 KW = 3rd-party extended memory feature  */
-#define DFTMEMSIZE      32768                           /* default/initial mem size  */
+                                                        /* 256 KW = Nova 3/4 MMPU */
+#define DFTMEMSIZE      32768	                        /* default/initial mem size  */
 #define MEM_ADDR_OK(x)  (((uint32) (x)) < (uint32) MEMSIZE)
 
 #endif
@@ -190,8 +191,19 @@
 #define DEV_LOW         010                             /* lowest intr dev */
 #define DEV_HIGH        051                             /* highest intr dev */
 #define DEV_MDV         001                             /* multiply/divide */
+
+#if defined (ECLIPSE)
+
 #define DEV_ECC         002                             /* ECC memory control */
 #define DEV_MAP         003                             /* MMPU control */
+
+#else
+
+#define DEV_MAP         002                             /* MMPU MAP */
+#define DEV_MAP1        003                             /* MMPU MAP1 */
+
+#endif
+
 #define DEV_TTI         010                             /* console input */
 #define DEV_TTO         011                             /* console output */
 #define DEV_PTR         012                             /* paper tape reader */
@@ -323,6 +335,9 @@ typedef struct {
 /* Function prototypes */
 
 int32 MapAddr (int32 map, int32 addr);
+int32 GetMap (int32 addr);
+int32 PutMap (int32 addr, int32 data);
+
 t_stat set_enb (UNIT *uptr, int32 val, char *cptr, void *desc);
 t_stat set_dsb (UNIT *uptr, int32 val, char *cptr, void *desc);
 

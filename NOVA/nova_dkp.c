@@ -557,7 +557,11 @@ switch (code) {                                         /* decode IR<5:7> */
         if ((dev_busy & INT_DKP) == 0) {
             dkp_ma = AC & (drv_tab[dtype].newf? DMASK: AMASK);
             if (AC & 0100000)
+#if defined (ECLIPSE)
                 dkp_map = 3;                            /* high bit is map */
+#else
+                dkp_map = 1;                            /* high bit is map */
+#endif
             else
                 dkp_map = 0;
         }

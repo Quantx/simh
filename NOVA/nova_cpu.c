@@ -67,7 +67,7 @@
    AC[0:3]<0:15>        general registers
    C                    carry flag
    PC<0:14>             program counter
-   
+
    The NOVA has three instruction formats: memory reference, I/O transfer,
    and operate.  The memory reference format is:
 
@@ -219,7 +219,7 @@
       flags.  If ION and ION pending are set, and at least one interrupt
       request is pending, then an interrupt occurs.  Note that the 16b PIO
       mask must be mapped to the simulator's device bit mapping.
- 
+
    3. Non-existent memory.  On the NOVA, reads to non-existent memory
       return zero, and writes are ignored.  In the simulator, the
       largest possible memory is instantiated and initialized to zero.
@@ -244,14 +244,14 @@
 #define SEXT(x)         (((x) & SIGN)? ((x) | ~DMASK): (x))
 #define STK_CHECK(x,y)  if (((x) & 0377) < (y)) \
                             int_req = int_req | INT_STK
-#define IND_STEP(x)     M[x] & A_IND;  /* return next level indicator */ \
+#define IND_STEP(x)     GetMap(x) & A_IND; /* return next level indicator */ \
                         if ( ((x) <= AUTO_TOP) && ((x) >= AUTO_INC) ) {  \
                             if ( (x) < AUTO_DEC )                        \
-                                M[x] = (M[x] + 1) & DMASK;               \
+                                PutMap( x, (GetMap(x) + 1) & DMASK );    \
                             else                                         \
-                                M[x] = (M[x] - 1) & DMASK;               \
+                                PutMap( x, (GetMap(x) - 1) & DMASK );    \
                             }                                            \
-                        x = M[x] & AMASK
+                        x = GetMap(x) & AMASK
 
 #define INCREMENT_PC    PC = (PC + 1) & AMASK           /* increment PC */
 
@@ -259,20 +259,23 @@
 #define UNIT_V_STK      (UNIT_V_UF + 1)                 /* stack instr */
 #define UNIT_V_BYT      (UNIT_V_UF + 2)                 /* byte instr */
 #define UNIT_V_64KW     (UNIT_V_UF + 3)                 /* 64KW mem support */
-#define UNIT_V_MSIZE    (UNIT_V_UF + 4)                 /* dummy mask */
+#define UNIT_V_MMPU     (UNIT_V_UF + 4)                 /* MMPU present */
+#define UNIT_V_MSIZE    (UNIT_V_UF + 5)                 /* dummy mask */
 #define UNIT_MDV        (1 << UNIT_V_MDV)
 #define UNIT_STK        (1 << UNIT_V_STK)
 #define UNIT_BYT        (1 << UNIT_V_BYT)
 #define UNIT_64KW       (1 << UNIT_V_64KW)
+#define UNIT_MMPU       (1 << UNIT_V_MMPU)
 #define UNIT_MSIZE      (1 << UNIT_V_MSIZE)
-#define UNIT_IOPT       (UNIT_MDV | UNIT_STK | UNIT_BYT | UNIT_64KW)
-#define UNIT_NOVA3      (UNIT_MDV | UNIT_STK)
-#define UNIT_NOVA4      (UNIT_MDV | UNIT_STK | UNIT_BYT)
+#define UNIT_IOPT       (UNIT_MDV | UNIT_STK | UNIT_BYT | UNIT_64KW | UNIT_MMPU)
+#define UNIT_NOVA3      (UNIT_MDV | UNIT_STK | UNIT_MMPU)
+#define UNIT_NOVA4      (UNIT_MDV | UNIT_STK | UNIT_MMPU | UNIT_BYT)
 #define UNIT_KERONIX    (UNIT_MDV | UNIT_64KW)
 
 #define MODE_64K        (cpu_unit.flags & UNIT_64KW)
 #define MODE_64K_ACTIVE ((cpu_unit.flags & UNIT_64KW) && (0xFFFF == AMASK))
 
+#define MODE_MMPU       (cpu_unit.flags & UNIT_MMPU)
 
 typedef struct
     {
@@ -332,7 +335,6 @@ char * devBitNames( int32 flags, char * ptr, char * sepStr ) ;
 
 void mask_out (int32 mask);
 
-
 /* CPU data structures
 
    cpu_dev      CPU device descriptor
@@ -381,22 +383,24 @@ MTAB cpu_mod[] = {
     { UNIT_IOPT, UNIT_MDV,   "MDV",   "MDV",   NULL },
     { UNIT_IOPT, UNIT_64KW,  "EXT64KW", "EXT64KW",  NULL },
     { UNIT_IOPT,        0,   "none",  "NONE",  NULL },
-    { UNIT_MSIZE, ( 4 * 1024), NULL,  "4K", &cpu_set_size },
-    { UNIT_MSIZE, ( 8 * 1024), NULL,  "8K", &cpu_set_size },
-    { UNIT_MSIZE, (12 * 1024), NULL, "12K", &cpu_set_size },
-    { UNIT_MSIZE, (16 * 1024), NULL, "16K", &cpu_set_size },
-    { UNIT_MSIZE, (20 * 1024), NULL, "20K", &cpu_set_size },
-    { UNIT_MSIZE, (24 * 1024), NULL, "24K", &cpu_set_size },
-    { UNIT_MSIZE, (28 * 1024), NULL, "28K", &cpu_set_size },
-    { UNIT_MSIZE, (32 * 1024), NULL, "32K", &cpu_set_size },
-    { UNIT_MSIZE, (36 * 1024), NULL, "36K", &cpu_set_size },
-    { UNIT_MSIZE, (40 * 1024), NULL, "40K", &cpu_set_size },
-    { UNIT_MSIZE, (44 * 1024), NULL, "44K", &cpu_set_size },
-    { UNIT_MSIZE, (48 * 1024), NULL, "48K", &cpu_set_size },
-    { UNIT_MSIZE, (52 * 1024), NULL, "52K", &cpu_set_size },
-    { UNIT_MSIZE, (56 * 1024), NULL, "56K", &cpu_set_size },
-    { UNIT_MSIZE, (60 * 1024), NULL, "60K", &cpu_set_size },
-    { UNIT_MSIZE, (64 * 1024), NULL, "64K", &cpu_set_size },
+    { UNIT_MSIZE, ( 4  * 1024), NULL,   "4K", &cpu_set_size },
+    { UNIT_MSIZE, ( 8  * 1024), NULL,   "8K", &cpu_set_size },
+    { UNIT_MSIZE, (12  * 1024), NULL,  "12K", &cpu_set_size },
+    { UNIT_MSIZE, (16  * 1024), NULL,  "16K", &cpu_set_size },
+    { UNIT_MSIZE, (20  * 1024), NULL,  "20K", &cpu_set_size },
+    { UNIT_MSIZE, (24  * 1024), NULL,  "24K", &cpu_set_size },
+    { UNIT_MSIZE, (28  * 1024), NULL,  "28K", &cpu_set_size },
+    { UNIT_MSIZE, (32  * 1024), NULL,  "32K", &cpu_set_size },
+    { UNIT_MSIZE, (36  * 1024), NULL,  "36K", &cpu_set_size },
+    { UNIT_MSIZE, (40  * 1024), NULL,  "40K", &cpu_set_size },
+    { UNIT_MSIZE, (44  * 1024), NULL,  "44K", &cpu_set_size },
+    { UNIT_MSIZE, (48  * 1024), NULL,  "48K", &cpu_set_size },
+    { UNIT_MSIZE, (52  * 1024), NULL,  "52K", &cpu_set_size },
+    { UNIT_MSIZE, (56  * 1024), NULL,  "56K", &cpu_set_size },
+    { UNIT_MSIZE, (60  * 1024), NULL,  "60K", &cpu_set_size },
+    { UNIT_MSIZE, (64  * 1024), NULL,  "64K", &cpu_set_size },
+    { UNIT_MSIZE, (128 * 1024), NULL, "128K", &cpu_set_size }, /* only usefull with the MAP */
+    { UNIT_MSIZE, (256 * 1024), NULL, "256K", &cpu_set_size }, /* only usefull with the MAP */
     { MTAB_XTD|MTAB_VDV|MTAB_NMO|MTAB_SHP, 0, "HISTORY", "HISTORY",
       &hist_set, &hist_show },
 
@@ -409,6 +413,75 @@ DEVICE cpu_dev = {
     &cpu_ex, &cpu_dep, &cpu_reset,
     NULL, NULL, NULL
     };
+
+int32 MapStat = 0;                                      /* Map status register */
+int32 MapStatNext = 0;                                  /* Bits to be set uppon inderect */
+int32 Inhibit = 0;                                      /* !0=inhibit interrupts : */
+                                                        /*    1 = single cycle inhibit   */
+                                                        /*    2 = inhibit until indirection   */
+                                                        /*    3 = inhibit next instruction only */
+
+/* MapStat/MapStatNext flags */
+#define MAPSTAT_VALID 0040141                           /* Valid bits for MapStat     */
+#define MAPNEXT_VALID 0100036                           /* Valid bits for MapStatNext */
+#define PAGEMASK 0377                                   /* Largest page possible */
+#define PAGEFAULT 0777                                  /* Invalid page mask */
+
+#define DCMMAP_ENABLE (MapStat & (1 << 14))             /* Is data channel mapping enabled */
+#define USERMAP_ENABLE ( !(MapStat & (1 << 13)) \
+                       && (MapStat & (1 << 15)) )       /* Is user mapping enabled */
+
+#define WRITE_PROTECT (MapStat & (1 << 1))              /* Is write protection enabled */
+#define IOT_PROTECT (MapStat & (1 << 2))                /* Is I/O transfer protection enabled */
+#define INDER_PROTECT (MapStat & (1 << 3))              /* Is indirection protection enabled */
+#define AUTOINC_PROTECT (MapStat & (1 << 4))            /* Is auto-increment protection enabled */
+#define VALIDITY_PROTECT (MapStat & (1 << 5))           /* Is validity protection enabled */
+
+int32 FetchAddress = 0;                                 /* Current instruction address */
+int32 Fault = 0;                                        /* Fault has occured, trap MMPU */
+int32 Map[4][32];                                       /* The actual MAPs 0=User A, 1=User B, 2=Dch A, 3=Dch B */
+int32 SingleCycle = 0;                                  /* Map one LDA/STA */
+int32 PageCheck = 0;                                    /* Page Check Register */
+int32 ViolationDCH = 0;                                 /* Data Channel Violation */
+int32 ViolationWord = 0;                                /* Violation status register */
+int32 ViolationAddress = 0;                             /* Violation address register */
+
+t_stat map_ex (t_value *vptr, t_addr addr, UNIT *uptr, int32 sw);
+t_stat map_dep (t_value val, t_addr addr, UNIT *uptr, int32 sw);
+t_stat map_reset (DEVICE *dptr);
+t_stat map_svc (UNIT *uptr);
+
+
+/* MAP data structures
+   map_dev      MAP device descriptor
+   map_unit     MAP unit descriptor
+   map_reg      MAP register list
+*/
+
+UNIT map_unit = {
+    UDATA ( &map_svc, 0, MAXMEMSIZE )
+};
+
+REG map_reg[] = {
+    { ORDATA ( STATUS, MapStat, 16 ) },
+    { FLDATA ( INHIBIT, MapStat, 13 ) },
+    { FLDATA ( USER_ENABLE, MapStat, 15 ) },
+    { FLDATA ( DCH_ENABLE, MapStat, 14 ) },
+    { FLDATA ( USERMAP, MapStat, 0 ) },
+    { ORDATA ( CYCLE, SingleCycle, 16 ) },
+    { ORDATA ( CHECK, PageCheck, 16 ) },
+    { ORDATA ( VIOLATION_STATUS, ViolationWord, 16 ) },
+    { FLDATA ( VIOLATION_DCH, ViolationDCH, 0 ) },
+    { ORDATA ( VIOLATION_ADDRESS, ViolationAddress, 16 ) },
+    { NULL }
+};
+
+DEVICE map_dev = {
+    "MAP", &map_unit, map_reg, NULL,
+    1, 8, 17, 1, 8, 16,
+    &map_ex, &map_dep, NULL,
+    NULL, NULL, NULL
+};
 
 t_stat sim_instr (void)
 {
@@ -433,39 +506,63 @@ while (reason == 0) {                                   /* loop until halted */
             break;
         }
 
+    if ( Fault )                                        /* MMPU error */
+    {
+        int32 MA, indf;
+
+        Fault = 0;                                      /* Reset fault */
+
+        MapStat |= 1 << 13;                             /* Disable user mapping */
+        int_req = int_req & ~INT_ION;                   /* Disable interrupts */
+
+        MA = TRP_JMP;                                   /* jmp @47 */
+
+        for (i = 0, indf = 1; indf && (i < ind_max); i++) {
+            indf = IND_STEP (MA);                       /* indirect loop */
+        }
+        if (i >= ind_max) {
+            reason = STOP_IND_INT;
+            break;
+        }
+
+        PC = MA;
+    }
+
     if (int_req > INT_PENDING) {                        /* interrupt or exception? */
         int32 MA, indf;
+
+        MapStat |= 1 << 13;                             /* Disable user mapping */
 
         if (int_req & INT_TRAP) {                       /* trap instruction? */
             int_req = int_req & ~INT_TRAP ;             /* clear */
             PCQ_ENTRY;                                  /* save old PC */
-            M[TRP_SAV] = (PC - 1) & AMASK;
+            PutMap( TRP_SAV, (PC - 1) & AMASK );
             MA = TRP_JMP;                               /* jmp @47 */
             }
         else {
             int_req = int_req & ~INT_ION;               /* intr off */
             PCQ_ENTRY;                                  /* save old PC */
-            M[INT_SAV] = PC;
+            PutMap( INT_SAV, PC );
             if (int_req & INT_STK) {                    /* stack overflow? */
                 int_req = int_req & ~INT_STK;           /* clear */
                 MA = STK_JMP;                           /* jmp @3 */
-        }
+            }
         else
-        MA = INT_JMP;                                   /* intr: jmp @1 */
+        MA = GetMap( INT_JMP );                         /* intr: jmp @1 */
         }
     if ( MODE_64K_ACTIVE ) {
         indf = IND_STEP (MA);
         }
     else
-        {
-        for (i = 0, indf = 1; indf && (i < ind_max); i++) {
+    {
+        for (i = 0, indf = 1; indf && (i < ind_max); i++) { /* MMPU is disabled here */
             indf = IND_STEP (MA);                       /* indirect loop */
-            }
+        }
         if (i >= ind_max) {
             reason = STOP_IND_INT;
             break;
-            }
         }
+    }
     PC = MA;
     }                                                   /* end interrupt */
 
@@ -474,7 +571,7 @@ while (reason == 0) {                                   /* loop until halted */
         break;
         }
 
-    IR = M[PC];                                         /* fetch instr */
+    IR = GetMap(FetchAddress = PC);                     /* fetch instr, record address */
     if ( hist_cnt )
         {
         hist_save( PC, IR ) ;                           /*  PC, int_req unchanged */
@@ -621,11 +718,27 @@ while (reason == 0) {                                   /* loop until halted */
             else                                        /* compat mode */
                 {
                  for (i = 0; indf && (i < ind_max); i++) {   /* count */
+                    if (i >= 15 && USERMAP_ENABLE && INDER_PROTECT) break;
+                    if ( MA >= 020 && MA <= 037 && USERMAP_ENABLE && AUTOINC_PROTECT ) break;
                     indf = IND_STEP (MA);               /* resolve indirect */
                 }
+
                 if (i >= ind_max) {                     /* too many? */
                     reason = STOP_IND;
                     break;
+                }
+
+                if (i >= 15 && USERMAP_ENABLE && INDER_PROTECT) { /* violated mmpu inderection protection */
+                    ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 3) | (MapStat & 1);
+                    ViolationAddress = FetchAddress;
+                    ViolationDCH = 0;
+                    Fault = 1;
+                }
+                else if ( MA >= 020 && MA <= 037 && USERMAP_ENABLE && AUTOINC_PROTECT ) { /* violated mmpu auto inc/dec protection */
+                    ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 4) | (MapStat & 1);
+                    ViolationAddress = FetchAddress;
+                    ViolationDCH = 0;
+                    Fault = 1;
                 }
             }
         }
@@ -638,46 +751,46 @@ while (reason == 0) {                                   /* loop until halted */
             PC = MA;
             break;
         case 002:                                       /* ISZ */
-            src = (M[MA] + 1) & DMASK;
-            if (MEM_ADDR_OK(MA))
-                M[MA] = src;
+            src = (GetMap(MA) + 1) & DMASK;
+            if (MEM_ADDR_OK(GetMap(MA)))
+                PutMap(MA, src);
             if (src == 0)
                 INCREMENT_PC ;
             break;
         case 003:                                       /* DSZ */
-            src = (M[MA] - 1) & DMASK;
-            if (MEM_ADDR_OK(MA))
-                M[MA] = src;
+            src = (GetMap(MA) - 1) & DMASK;
+            if (MEM_ADDR_OK(GetMap(MA)))
+                PutMap(MA, src);
             if (src == 0)
                 INCREMENT_PC ;
             break;
         case 004:                                       /* LDA 0 */
-            AC[0] = M[MA];
+            AC[0] = GetMap(MA);
             break;
         case 005:                                       /* LDA 1 */
-            AC[1] = M[MA];
+            AC[1] = GetMap(MA);
             break;
         case 006:                                       /* LDA 2 */
-            AC[2] = M[MA];
+            AC[2] = GetMap(MA);
             break;
         case 007:                                       /* LDA 3 */
-            AC[3] = M[MA];
+            AC[3] = GetMap(MA);
             break;
         case 010:                                       /* STA 0 */
-            if (MEM_ADDR_OK(MA))
-                M[MA] = AC[0];
+            if (MEM_ADDR_OK(GetMap(MA)))
+                PutMap(MA, AC[0]);
             break;
         case 011:                                       /* STA 1 */
-            if (MEM_ADDR_OK(MA))
-                M[MA] = AC[1];
+            if (MEM_ADDR_OK(GetMap(MA)))
+                PutMap(MA, AC[1]);
             break;
         case 012:                                       /* STA 2 */
-            if (MEM_ADDR_OK(MA))
-                M[MA] = AC[2];
+            if (MEM_ADDR_OK(GetMap(MA)))
+                PutMap(MA, AC[2]);
             break;
         case 013:                                       /* STA 3 */
-            if (MEM_ADDR_OK(MA))
-                M[MA] = AC[3];
+            if (MEM_ADDR_OK(GetMap(MA)))
+                PutMap(MA, AC[3]);
             break;
             }                                           /* end switch */
         }                                               /* end mem ref */
@@ -685,40 +798,51 @@ while (reason == 0) {                                   /* loop until halted */
 /* IOT instruction */
 
     else {                                              /* IOT */
-        int32 dstAC, pulse, code, device, iodata;
+        int32 dstAC, pulse, code, device, iodata, match;
 
         dstAC = I_GETDST (IR);                          /* decode fields */
         code = I_GETIOT (IR);
         pulse = I_GETPULSE (IR);
         device = I_GETDEV (IR);
+        match = 0;
+
+        if ( USERMAP_ENABLE && IOT_PROTECT
+        && device != 1 && device <= 074 && device >= 076 ) /* I/O violation */
+        {
+            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 2) | (MapStat & 1);
+            ViolationAddress = FetchAddress;
+            ViolationDCH = 0;
+            Fault = 1;
+        }
+
         if (code == ioSKP) {                            /* IO skip? */
             switch (pulse) {                            /* decode IR<8:9> */
 
-            case 0:                                     /* skip if busy */
-                if ((device == DEV_CPU)? (int_req & INT_ION) != 0:
-                    (dev_busy & dev_table[device].mask) != 0)
-                    INCREMENT_PC ;
+            case 0: match = 1;                          /* skip if busy */
+            case 1: switch (device) {                   /* skip if not busy */
+                    case DEV_CPU:                       /* check if interrupts are enabled */
+                        if ( (int_req & INT_ION) == match ) INCREMENT_PC;
+                        break;
+                    case DEV_MAP:                       /* check if a data channel error has occured */
+                        if ( MODE_MMPU && ViolationDCH == match ) INCREMENT_PC;
+                        break;
+                    default:
+                        if ( (dev_busy & dev_table[device].mask) == match ) INCREMENT_PC;
+                }
                 break;
-
-            case 1:                                     /* skip if not busy */
-                if ((device == DEV_CPU)? (int_req & INT_ION) == 0:
-                    (dev_busy & dev_table[device].mask) == 0)
-                    INCREMENT_PC ;
-                break;
-
-            case 2:                                     /* skip if done */
-                if ((device == DEV_CPU)? pwr_low != 0:
-                    (dev_done & dev_table[device].mask) != 0)
-                    INCREMENT_PC ;
-                break;
-
-            case 3:                                     /* skip if not done */
-                if ((device == DEV_CPU)? pwr_low == 0:
-                    (dev_done & dev_table[device].mask) == 0)
-                    INCREMENT_PC ;
-                break;
-                }                                       /* end switch */
-            }                                           /* end IO skip */
+            case 2: match = 1;                          /* skip if done */
+            case 3: switch (device) {                   /* skip if not done */
+                    case DEV_CPU:                       /* check for power failure */
+                        if ( pwr_low == match ) INCREMENT_PC;
+                        break;
+                    case DEV_MAP:                       /* check if address translation is enabled */
+                        if ( MODE_MMPU && USERMAP_ENABLE == match ) INCREMENT_PC;
+                        break;
+                    default:
+                        if ( (dev_busy & dev_table[device].mask) == match ) INCREMENT_PC;
+                }
+            }                                           /* end switch */
+        }                                               /* end IO skip */
 
  /* Hmm, this means a Nova 3 _must_ have DEV_MDV enabled - not true in DG land  */
 
@@ -737,26 +861,26 @@ while (reason == 0) {                                   /* loop until halted */
             case ioDIA:                                 /* load byte */
                 if (cpu_unit.flags & UNIT_BYT)
                     {
-                    AC[dstAC] = (M[AC[pulse] >> 1] >> ((AC[pulse] & 1)? 0: 8)) & 0377 ;
+                    AC[dstAC] = (GetMap(AC[pulse] >> 1) >> ((AC[pulse] & 1)? 0: 8)) & 0377 ;
                     }
                 else if (cpu_unit.flags & UNIT_STK)  /*  if Nova 3 this is really a SAV... 2007-Jun-01, BKR  */
                     {
                     SP = INCA (SP);
-                    if (MEM_ADDR_OK (SP))
-                        M[SP] = AC[0];
+                    if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, AC[0]);
                     SP = INCA (SP);
-                    if (MEM_ADDR_OK (SP))
-                        M[SP] = AC[1];
+                    if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, AC[1]);
                     SP = INCA (SP);
-                    if (MEM_ADDR_OK (SP))
-                        M[SP] = AC[2];
+                    if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, AC[2]);
                     SP = INCA (SP);
-                    if (MEM_ADDR_OK (SP))
-                        M[SP] = FP;
+                    if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, FP);
                     SP = INCA (SP);
-                    if (MEM_ADDR_OK (SP))
-                        M[SP] = (C >> 1) | (AC[3] & AMASK);
-                    AC[3] = FP = SP & AMASK;  
+                    if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, (C >> 1) | (AC[3] & AMASK) );
+                    AC[3] = FP = SP & AMASK;
                     STK_CHECK (SP, 5);
                     }
                 else
@@ -778,22 +902,22 @@ while (reason == 0) {                                   /* loop until halted */
                 if (cpu_unit.flags & UNIT_STK) {
                     if (pulse == iopN) {                /* push (PSHA) */
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = AC[dstAC];
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, AC[dstAC]);
                         STK_CHECK (SP, 1);
                         }
                     if ((pulse == iopS) &&              /* Nova 4 pshn (PSHN) */
                         (cpu_unit.flags & UNIT_BYT)) {
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = AC[dstAC];
-                        if ( (SP & 0xFFFF) > (M[042] & 0xFFFF) )
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, AC[dstAC]);
+                        if ( (SP & 0xFFFF) > (GetMap(042) & 0xFFFF) )
                             {
                             int_req = int_req | INT_STK ;
                             }
                         }
                     if (pulse == iopC) {                /* pop (POPA) */
-                        AC[dstAC] = M[SP];
+                        AC[dstAC] = GetMap(SP);
                         SP = DECA (SP);
                         }
                     }
@@ -805,28 +929,28 @@ while (reason == 0) {                                   /* loop until halted */
                     int32 MA, val;
                    MA = AC[pulse] >> 1;
                     val = AC[dstAC] & 0377;
-                    if (MEM_ADDR_OK (MA)) M[MA] = (AC[pulse] & 1)?
-                      ((M[MA] & ~0377) | val)
-                    : ((M[MA] & 0377) | (val << 8));
+                    if (MEM_ADDR_OK (MA)) PutMap(MA, (AC[pulse] & 1)?
+                      ((GetMap(MA) & ~0377) | val)
+                    : ((GetMap(MA) &  0377) | (val << 8)) );
                     }
                 else if (cpu_unit.flags & UNIT_STK)  /*  if Nova 3 this is really a SAV... 2007-Jun-01, BKR  */
                     {
                     SP = INCA (SP);
-                    if (MEM_ADDR_OK (SP))
-                        M[SP] = AC[0];
+                    if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, AC[0]);
                     SP = INCA (SP);
-                    if (MEM_ADDR_OK (SP))
-                        M[SP] = AC[1];
+                    if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, AC[1]);
                     SP = INCA (SP);
-                    if (MEM_ADDR_OK (SP))
-                        M[SP] = AC[2];
+                    if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, AC[2]);
                     SP = INCA (SP);
-                    if (MEM_ADDR_OK (SP))
-                        M[SP] = FP;
+                    if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, FP);
                     SP = INCA (SP);
-                    if (MEM_ADDR_OK (SP))
-                        M[SP] = (C >> 1) | (AC[3] & AMASK);
-                    AC[3] = FP = SP & AMASK;  
+                    if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, (C >> 1) | (AC[3] & AMASK) );
+                    AC[3] = FP = SP & AMASK;
                     STK_CHECK (SP, 5);
                     }
                 break;
@@ -835,61 +959,61 @@ while (reason == 0) {                                   /* loop until halted */
                 if (cpu_unit.flags & UNIT_STK) {
                     if (pulse == iopN) {                /* save */
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = AC[0];
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, AC[0]);
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = AC[1];
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, AC[1]);
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = AC[2];
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, AC[2]);
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = FP;
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, FP);
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = (C >> 1) | (AC[3] & AMASK);
-                        AC[3] = FP = SP & AMASK;  
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, (C >> 1) | (AC[3] & AMASK) );
+                        AC[3] = FP = SP & AMASK;
                         STK_CHECK (SP, 5);
                         }
                     else if (pulse == iopC) {                /* retn */
                         PCQ_ENTRY;
                         SP = FP & AMASK;
-                        C = (M[SP] << 1) & CBIT;
-                        PC = M[SP] & AMASK;
+                        C = (GetMap(SP) << 1) & CBIT;
+                        PC = GetMap(SP) & AMASK;
                         SP = DECA (SP);
-                        AC[3] = M[SP];
+                        AC[3] = GetMap(SP);
                         SP = DECA (SP);
-                        AC[2] = M[SP];
+                        AC[2] = GetMap(SP);
                         SP = DECA (SP);
-                        AC[1] = M[SP];
+                        AC[1] = GetMap(SP);
                         SP = DECA (SP);
-                        AC[0] = M[SP];
+                        AC[0] = GetMap(SP);
                         SP = DECA (SP);
                         FP = AC[3] & AMASK;
                         }
                     else if ((pulse == iopS) &&              /* Nova 4 SAVN */
                         (cpu_unit.flags & UNIT_BYT)) {
-                        int32 frameSz = M[PC] ;
+                        int32 frameSz = GetMap(PC);
                         PC = INCA (PC) ;
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = AC[0];
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, AC[0]);
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = AC[1];
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, AC[1]);
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = AC[2];
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, AC[2]);
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = FP;
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, FP);
                         SP = INCA (SP);
-                        if (MEM_ADDR_OK (SP))
-                            M[SP] = (C >> 1) | (AC[3] & AMASK);
+                        if (MEM_ADDR_OK(GetMap(SP)))
+                            PutMap(SP, (C >> 1) | (AC[3] & AMASK) );
                         AC[3] = FP = SP & AMASK ;
                         SP = (SP + frameSz) & AMASK ;
-                        if (SP > M[042])
+                        if (SP > GetMap(042))
                             {
                             int_req = int_req | INT_STK;
                             }
@@ -962,13 +1086,59 @@ while (reason == 0) {                                   /* loop until halted */
                 else if ((dstAC == 3) && (cpu_unit.flags & UNIT_STK))  /*  if Nova 3 this is really a PSHA... 2007-Jun-01, BKR  */
                     {
                     SP = INCA (SP);
-                    if (MEM_ADDR_OK (SP))
-                        M[SP] = AC[dstAC];
+                    if (MEM_ADDR_OK(GetMap(SP)))
+                        PutMap(SP, AC[dstAC]);
                     STK_CHECK (SP, 1);
                     }
                 break;
                 }                                       /* end case code */
             }                                           /* end if mul/div */
+
+        else if (device == DEV_MAP && MODE_MMPU) {      /* Nova 3/4 MAP MAP */
+            switch (code) {
+                case ioDOA:                             /* write MAP status */
+                    MapStat = AC[dstAC] & MAPSTAT_VALID;
+                    MapStatNext = AC[dstAC] & MAPNEXT_VALID; /* Bits to be enabled on next inderect */
+                    break;
+                case ioDIA:                             /* read MAP status */
+                    AC[dstAC] = MapStat;
+                    break;
+                case ioDOB:                             /* load MAP */
+                    Map[(AC[dstAC] >> 9 & 1)|(AC[dstAC] >> 14 & 2)][AC[dstAC] >> 10 & 037] = AC[dstAC];
+                    break;
+                case ioDIB:                             /* read violation data */
+                    AC[dstAC] = ViolationWord & 077777;
+                    break;
+            }                                           /* end of case code */
+
+            switch (pulse) {
+                case iopC:                              /* clear MAP violation status word */
+                    ViolationWord = 0;
+                    ViolationDCH = 0;
+                    break;
+                case iopS:                              /* enable MAP single cycle */
+                    SingleCycle = 1;
+                    break;
+            }                                           /* end case code */
+        }                                               /* end if MAP map */
+
+        else if (device == DEV_MAP1 && MODE_MMPU) {     /* Nova 3/4 MAP MAP1 */
+            switch (code) {
+                case ioDOA:                             /* setup page check */
+                    PageCheck = AC[dstAC];
+                    break;
+                case ioDIA:                             /* page check */
+                    AC[dstAC] = Map[(PageCheck >> 9 & 1)|(PageCheck >> 14 & 2)][PageCheck >> 10 & 037];
+                    break;
+                case ioDIB:                             /* read violation address */
+                    AC[dstAC] = ViolationAddress & 077777;
+                    break;
+            }                                           /* end case code */
+
+            if ( pulse == iopC ) {                      /* Clear MAP */
+
+            }
+        }                                               /* end if MAP map1 */
 
         else if (device == DEV_CPU) {                   /* CPU control */
             switch (code) {                             /* decode IR<5:7> */
@@ -1177,7 +1347,7 @@ return SCPE_OK;
  *      Program Load), and cost ~$400 USD (in 1970 - wow!) to load 32(10) words from
  *      a PROM to main (core) memory location 0 - 32.
  *    - This code is documented in various DG Nova programming manuals and was
- *      quite static (i.e. no revisions or updates to code were made). 
+ *      quite static (i.e. no revisions or updates to code were made).
  *    - switch register is used to determine device code and device type.
  *    - lower 6-bits of switch register determines device code (0-63.).
  *    - most significant bit determines if device is "low speed" or "high speed".
@@ -1253,11 +1423,120 @@ saved_PC = BOOT_START;
 return SCPE_OK;
 }
 
-/* 1-to-1 map for I/O devices */
+/* MAP device services */
+t_stat map_svc (UNIT *uptr) { return SCPE_OK; } /* Do nothing */
+
+/* MAP examine */
+/*
+    7-bit Address Format:
+    |0|0|00000
+    | | |Logical page number
+    | |Map A = 0, Map B = 1
+    |User = 0, Data Channel = 1
+*/
+t_stat map_ex (t_value *vptr, t_addr addr, UNIT *uptr, int32 sw)
+{
+    if (addr > 0177) return SCPE_NXM;
+    if (vptr != NULL) *vptr = Map[(addr >> 5) & 3][addr & 037] & 0177777;
+    return SCPE_OK;
+}
+
+/* MAP deposit */
+t_stat map_dep (t_value val, t_addr addr, UNIT *uptr, int32 sw)
+{
+    if (addr > 0177) return SCPE_NXM;
+    Map[(addr >> 5) & 3][addr & 037] = (int32)val & 0177777;
+    return SCPE_OK;
+}
+
+/* MAP address translation */
+int32 GetMap(int32 addr)
+{
+    addr &= AMASK;
+
+    // Apply user mapping
+    if ( USERMAP_ENABLE ) addr = ( (Map[MapStat & 1][addr >> 10 & 037] << 10) | (addr & 01777) ) & 0777777;
+
+    return M[addr];
+}
+
+int32 PutMap(int32 addr, int32 data)
+{
+    addr &= AMASK;
+
+    int32 mpage = Map[MapStat & 1][addr >> 10 & 037];
+
+    // Apply user mapping
+    if ( USERMAP_ENABLE )
+    {
+        if ( (mpage & PAGEFAULT) == PAGEFAULT ) // Page validity violation
+        {
+            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 5) | (MapStat & 1);
+            ViolationAddress = FetchAddress;
+            ViolationDCH = 0;
+            Fault = 1;
+
+            return data;
+        }
+
+        if ( WRITE_PROTECT && (mpage & (1 << 8)) ) // Write protect violation
+        {
+            ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 1) | (MapStat & 1);
+            ViolationAddress = FetchAddress;
+            ViolationDCH = 0;
+            Fault = 1;
+
+            return data;
+        }
+
+        addr = (((mpage & PAGEMASK) << 10) | (addr & 01777)) & 0777777;
+    }
+
+    M[addr] = data;
+
+    return data;
+}
+
+
+/*
+   Given a map number and a logical, returns the physical address, unless
+   the map is not active, in which case logical = physical.  This is
+   used primarily by the I/O routines to map data channel read/writes.
+
+   DCH A when: map = 0
+   DCH B when: map = 1
+*/
 
 int32 MapAddr (int32 map, int32 addr)
 {
-return addr;
+    if ( map >= 0 && map <= 1 && DCMMAP_ENABLE ) /* map is valid and DCH mapping is enabled */
+    {
+        int32 mpage = Map[map + 2][(addr >> 10) & 037];
+
+        if ( (mpage & PAGEFAULT) == PAGEFAULT ) // Page validity violation
+        {
+            ViolationWord = 0100000 | ((addr >> 10) & 5) | (1 << 5) | map;
+            ViolationAddress = addr;
+            ViolationDCH = 1;
+            Fault = 1;
+
+            return 0; // TODO: Fix bad return value
+        }
+/*
+        if ( WRITE_PROTECT && (mpage & (1 << 8)) ) // Write protect violation
+        {
+            ViolationWord = 0100000 | ((addr >> 10) & 5) | (1 << 1) | map;
+            ViolationAddress = addr;
+            ViolationDCH = 1;
+            Fault = 1;
+
+            return -1;
+        }
+*/
+        addr = ((mpage & PAGEMASK) << 10) | (addr & 001777);
+    }
+
+    return addr;
 }
 
 /* History subsystem
@@ -1388,7 +1667,7 @@ if ( hptr )
         (hptr->ac3 & 0xFFFF),
         ((hptr->carry) ? 1 : 0)
         ) ;
-    if ( cpu_unit.flags & UNIT_STK  /* Nova 3 or Nova 4 */ ) 
+    if ( cpu_unit.flags & UNIT_STK  /* Nova 3 or Nova 4 */ )
         {
         fprintf( fp, "%06o  %06o   ", SP, FP ) ;
         }
