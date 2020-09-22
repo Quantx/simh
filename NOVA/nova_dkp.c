@@ -25,6 +25,7 @@
 
    dkp          moving head disk
 
+   25-Sep-20    SED     Added MAP support for Nova 3 and Nova 4
    27-Apr-12    RMS     Changed ??? string digraphs to ?, per C rules
    04-Jul-04    BKR     device name changed to DG's DKP from DEC's DP,
                         DEV_SET/CLR/INTR macro use started,

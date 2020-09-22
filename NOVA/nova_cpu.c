@@ -25,6 +25,7 @@
 
    cpu          Nova central processor
 
+   25-Sep-20    SED     Implemented MAP with 256KW extension for Nova 3 and Nova 4
    07-Sep-17    RMS     Fixed sim_eval declaration in history routine (COVERITY)
    17-Mar-13    RMS     Added clarifying brances to IND_STEP macro (Dave Bryan)
    04-Jul-07    BKR     DEV_SET/CLR macros now used,
@@ -259,23 +260,23 @@
 #define UNIT_V_STK      (UNIT_V_UF + 1)                 /* stack instr */
 #define UNIT_V_BYT      (UNIT_V_UF + 2)                 /* byte instr */
 #define UNIT_V_64KW     (UNIT_V_UF + 3)                 /* 64KW mem support */
-#define UNIT_V_MMPU     (UNIT_V_UF + 4)                 /* MMPU present */
+#define UNIT_V_MAP      (UNIT_V_UF + 4)                 /* MAP present */
 #define UNIT_V_MSIZE    (UNIT_V_UF + 5)                 /* dummy mask */
 #define UNIT_MDV        (1 << UNIT_V_MDV)
 #define UNIT_STK        (1 << UNIT_V_STK)
 #define UNIT_BYT        (1 << UNIT_V_BYT)
 #define UNIT_64KW       (1 << UNIT_V_64KW)
-#define UNIT_MMPU       (1 << UNIT_V_MMPU)
+#define UNIT_MAP        (1 << UNIT_V_MAP)
 #define UNIT_MSIZE      (1 << UNIT_V_MSIZE)
-#define UNIT_IOPT       (UNIT_MDV | UNIT_STK | UNIT_BYT | UNIT_64KW | UNIT_MMPU)
-#define UNIT_NOVA3      (UNIT_MDV | UNIT_STK | UNIT_MMPU)
-#define UNIT_NOVA4      (UNIT_MDV | UNIT_STK | UNIT_MMPU | UNIT_BYT)
+#define UNIT_IOPT       (UNIT_MDV | UNIT_STK | UNIT_BYT | UNIT_64KW | UNIT_MAP)
+#define UNIT_NOVA3      (UNIT_MDV | UNIT_STK | UNIT_MAP)
+#define UNIT_NOVA4      (UNIT_MDV | UNIT_STK | UNIT_MAP | UNIT_BYT)
 #define UNIT_KERONIX    (UNIT_MDV | UNIT_64KW)
 
 #define MODE_64K        (cpu_unit.flags & UNIT_64KW)
 #define MODE_64K_ACTIVE ((cpu_unit.flags & UNIT_64KW) && (0xFFFF == AMASK))
 
-#define MODE_MMPU       (cpu_unit.flags & UNIT_MMPU)
+#define MODE_MAP       (cpu_unit.flags & UNIT_MAP)
 
 typedef struct
     {
@@ -416,10 +417,6 @@ DEVICE cpu_dev = {
 
 int32 MapStat = 0;                                      /* Map status register */
 int32 MapStatNext = 0;                                  /* Bits to be set uppon inderect */
-int32 Inhibit = 0;                                      /* !0=inhibit interrupts : */
-                                                        /*    1 = single cycle inhibit   */
-                                                        /*    2 = inhibit until indirection   */
-                                                        /*    3 = inhibit next instruction only */
 
 /* MapStat/MapStatNext flags */
 #define MAPSTAT_VALID 0040141                           /* Valid bits for MapStat     */
@@ -438,7 +435,7 @@ int32 Inhibit = 0;                                      /* !0=inhibit interrupts
 #define VALIDITY_PROTECT (MapStat & (1 << 5))           /* Is validity protection enabled */
 
 int32 FetchAddress = 0;                                 /* Current instruction address */
-int32 Fault = 0;                                        /* Fault has occured, trap MMPU */
+int32 Fault = 0;                                        /* Fault has occured, trap MAP */
 int32 Map[4][32];                                       /* The actual MAPs 0=User A, 1=User B, 2=Dch A, 3=Dch B */
 int32 SingleCycle = 0;                                  /* Map one LDA/STA */
 int32 PageCheck = 0;                                    /* Page Check Register */
@@ -506,7 +503,7 @@ while (reason == 0) {                                   /* loop until halted */
             break;
         }
 
-    if ( Fault )                                        /* MMPU error */
+    if ( Fault )                                        /* MAP error */
     {
         int32 MA, indf;
 
@@ -555,7 +552,7 @@ while (reason == 0) {                                   /* loop until halted */
         }
     else
     {
-        for (i = 0, indf = 1; indf && (i < ind_max); i++) { /* MMPU is disabled here */
+        for (i = 0, indf = 1; indf && (i < ind_max); i++) { /* MAP is disabled here */
             indf = IND_STEP (MA);                       /* indirect loop */
         }
         if (i >= ind_max) {
@@ -728,17 +725,24 @@ while (reason == 0) {                                   /* loop until halted */
                     break;
                 }
 
-                if (i >= 15 && USERMAP_ENABLE && INDER_PROTECT) { /* violated mmpu inderection protection */
+                if (i >= 15 && USERMAP_ENABLE && INDER_PROTECT) { /* violated MAP inderection protection */
                     ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 3) | (MapStat & 1);
                     ViolationAddress = FetchAddress;
                     ViolationDCH = 0;
                     Fault = 1;
+                    continue;
                 }
-                else if ( MA >= 020 && MA <= 037 && USERMAP_ENABLE && AUTOINC_PROTECT ) { /* violated mmpu auto inc/dec protection */
+                else if ( MA >= 020 && MA <= 037 && USERMAP_ENABLE && AUTOINC_PROTECT ) { /* violated MAP auto inc/dec protection */
                     ViolationWord = 0100000 | ((FetchAddress >> 10) & 5) | (1 << 4) | (MapStat & 1);
                     ViolationAddress = FetchAddress;
                     ViolationDCH = 0;
                     Fault = 1;
+                    continue;
+                }
+                else // Enable MAP
+                {
+                    MapStat |= MapStatNext;
+                    MapStatNext = 0;
                 }
             }
         }
@@ -813,6 +817,7 @@ while (reason == 0) {                                   /* loop until halted */
             ViolationAddress = FetchAddress;
             ViolationDCH = 0;
             Fault = 1;
+            continue;
         }
 
         if (code == ioSKP) {                            /* IO skip? */
@@ -824,7 +829,7 @@ while (reason == 0) {                                   /* loop until halted */
                         if ( (int_req & INT_ION) == match ) INCREMENT_PC;
                         break;
                     case DEV_MAP:                       /* check if a data channel error has occured */
-                        if ( MODE_MMPU && ViolationDCH == match ) INCREMENT_PC;
+                        if ( MODE_MAP && ViolationDCH == match ) INCREMENT_PC;
                         break;
                     default:
                         if ( (dev_busy & dev_table[device].mask) == match ) INCREMENT_PC;
@@ -836,7 +841,7 @@ while (reason == 0) {                                   /* loop until halted */
                         if ( pwr_low == match ) INCREMENT_PC;
                         break;
                     case DEV_MAP:                       /* check if address translation is enabled */
-                        if ( MODE_MMPU && USERMAP_ENABLE == match ) INCREMENT_PC;
+                        if ( MODE_MAP && USERMAP_ENABLE == match ) INCREMENT_PC;
                         break;
                     default:
                         if ( (dev_busy & dev_table[device].mask) == match ) INCREMENT_PC;
@@ -1094,7 +1099,7 @@ while (reason == 0) {                                   /* loop until halted */
                 }                                       /* end case code */
             }                                           /* end if mul/div */
 
-        else if (device == DEV_MAP && MODE_MMPU) {      /* Nova 3/4 MAP MAP */
+        else if (device == DEV_MAP && MODE_MAP) {      /* Nova 3/4 MAP */
             switch (code) {
                 case ioDOA:                             /* write MAP status */
                     MapStat = AC[dstAC] & MAPSTAT_VALID;
@@ -1122,7 +1127,7 @@ while (reason == 0) {                                   /* loop until halted */
             }                                           /* end case code */
         }                                               /* end if MAP map */
 
-        else if (device == DEV_MAP1 && MODE_MMPU) {     /* Nova 3/4 MAP MAP1 */
+        else if (device == DEV_MAP1 && MODE_MAP) {     /* Nova 3/4 MAP1 */
             switch (code) {
                 case ioDOA:                             /* setup page check */
                     PageCheck = AC[dstAC];
@@ -1462,6 +1467,8 @@ int32 GetMap(int32 addr)
 
 int32 PutMap(int32 addr, int32 data)
 {
+    if ( Fault ) return data; // Encountered a fault, do not update memory
+
     addr &= AMASK;
 
     int32 mpage = Map[MapStat & 1][addr >> 10 & 037];

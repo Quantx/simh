@@ -23,6 +23,7 @@
    used in advertising or otherwise to promote the sale, use or other dealings
    in this Software without prior written authorization from Robert M Supnik.
 
+   25-Sep-20    SED     Added MAP definitions for Nova 3 and Nova 4
    25-Mar-12    RMS     Added missing parameters to prototypes (Mark Pizzolato)
    22-May-10    RMS     Added check for 64b definitions
    04-Jul-07    BKR     BUSY/DONE/INTR "convenience" macros added,
@@ -82,7 +83,7 @@
 
 #define MAXMEMSIZE      262144                          /* max memory size in 16-bit words: 32KW = DG max, */
                                                         /* 64 KW = 3rd-party extended memory feature  */
-                                                        /* 256 KW = Nova 3/4 MMPU */
+                                                        /* 256 KW = Nova 3/4 MAP */
 #define DFTMEMSIZE      32768	                        /* default/initial mem size  */
 #define MEM_ADDR_OK(x)  (((uint32) (x)) < (uint32) MEMSIZE)
 
@@ -199,8 +200,8 @@
 
 #else
 
-#define DEV_MAP         002                             /* MMPU MAP */
-#define DEV_MAP1        003                             /* MMPU MAP1 */
+#define DEV_MAP         002                             /* memory mapper */
+#define DEV_MAP1        003                             /* memory mapper (cont.) */
 
 #endif
 
