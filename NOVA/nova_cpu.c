@@ -716,6 +716,9 @@ while (reason == 0) {                                   /* loop until halted */
                     if (i >= 15 && USERMAP_ENABLE && INDER_PROTECT) break;
                     if ( MA >= 020 && MA <= 037 && USERMAP_ENABLE && AUTOINC_PROTECT ) break;
                     indf = IND_STEP (MA);               /* resolve indirect */
+
+                    MapStat |= MapStatNext;             /* Enable MAP */
+                    MapStatNext = 0;
                 }
 
                 if (i >= ind_max) {                     /* too many? */
@@ -736,11 +739,6 @@ while (reason == 0) {                                   /* loop until halted */
                     ViolationDCH = 0;
                     Fault = 1;
                     continue;
-                }
-                else // Enable MAP
-                {
-                    MapStat |= MapStatNext;
-                    MapStatNext = 0;
                 }
             }
         }
@@ -1215,6 +1213,11 @@ return;
 
 t_stat cpu_reset (DEVICE *dptr)
 {
+Fault = 0;                                             /* Disable MAP */
+MapStat = 0;
+MapStatNext = 0;
+SingleCycle = 0;
+
 int_req = int_req & ~(INT_ION | INT_STK | INT_TRAP);
 pimask = 0;
 dev_disable = 0;
